@@ -1,0 +1,1 @@
+"""Amazon official API adapters."""

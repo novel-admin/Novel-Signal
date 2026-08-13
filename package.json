@@ -1,0 +1,12 @@
+{
+  "name": "novel-signal",
+  "private": true,
+  "packageManager": "pnpm@9.15.4",
+  "scripts": {
+    "dev:web": "corepack pnpm --filter @novel-signal/web dev",
+    "build:web": "corepack pnpm --filter @novel-signal/web build",
+    "lint:web": "corepack pnpm --filter @novel-signal/web lint",
+    "typecheck:web": "corepack pnpm --filter @novel-signal/web typecheck",
+    "test:web": "corepack pnpm --filter @novel-signal/web test"
+  }
+}
