@@ -1,0 +1,59 @@
+from datetime import date, datetime
+from typing import Any
+
+from pydantic import BaseModel, Field
+
+
+class AdObservationCreate(BaseModel):
+    platform: str
+    marketplace: str
+    competitor_id: str | None = None
+    product_id: str | None = None
+    keyword_id: str | None = None
+    capture_id: str | None = None
+    ad_type: str
+    sponsored_position: int | None = Field(default=None, ge=1)
+    captured_at: datetime
+    evidence_ref: str | None = None
+    confidence: float | None = Field(default=None, ge=0, le=1)
+    fingerprint: str
+
+
+class PresenceUpsert(BaseModel):
+    competitor_id: str
+    keyword_id: str
+    day: date
+    observed_slots: int = Field(ge=0)
+    total_slots: int = Field(ge=0)
+    confidence: float | None = Field(default=None, ge=0, le=1)
+    evidence_ref: str | None = None
+
+
+class SpendEstimateCreate(BaseModel):
+    competitor_id: str
+    keyword_id: str | None = None
+    period_start: date
+    period_end: date
+    low: float = Field(ge=0)
+    expected: float = Field(ge=0)
+    high: float = Field(ge=0)
+    confidence: float = Field(ge=0, le=1)
+    method: str
+    model_version: str
+    input_coverage: float = Field(ge=0, le=1)
+    backtest_ref: str | None = None
+
+
+class OwnPerformanceCreate(BaseModel):
+    platform: str
+    account_id: str
+    campaign_id: str | None = None
+    period_start: date
+    period_end: date
+    impressions: int | None = Field(default=None, ge=0)
+    clicks: int | None = Field(default=None, ge=0)
+    spend: float | None = Field(default=None, ge=0)
+    sales: float | None = Field(default=None, ge=0)
+    conversions: int | None = Field(default=None, ge=0)
+    payload: dict[str, Any] = {}
+    evidence_ref: str | None = None
