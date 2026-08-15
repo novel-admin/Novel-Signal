@@ -1,8 +1,4 @@
-from typing import Generic, TypeVar
-
 from pydantic import BaseModel, Field
-
-ItemT = TypeVar("ItemT")
 
 
 class PageRequest(BaseModel):
@@ -10,7 +6,7 @@ class PageRequest(BaseModel):
     limit: int = Field(default=50, ge=1, le=200)
 
 
-class Page(BaseModel, Generic[ItemT]):
-    items: list[ItemT]
+class Page(BaseModel):
+    items: list[object]
     next_cursor: str | None = None
     total: int | None = None

@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
+from typing import Any
 
-from sqlalchemy import DateTime, ForeignKey, Index, JSON, String, Text, UniqueConstraint, func
+from sqlalchemy import JSON, DateTime, ForeignKey, Index, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from novel_signal.db import Base
@@ -26,8 +27,8 @@ class ChangeEvent(Base):
     new_observation_type: Mapped[str | None] = mapped_column(String(80))
     new_observation_id: Mapped[str | None] = mapped_column(String(36))
     field_name: Mapped[str | None] = mapped_column(String(120))
-    old_value: Mapped[dict | list | str | int | float | bool | None] = mapped_column(JSON)
-    new_value: Mapped[dict | list | str | int | float | bool | None] = mapped_column(JSON)
+    old_value: Mapped[Any] = mapped_column(JSON, nullable=True)
+    new_value: Mapped[Any] = mapped_column(JSON, nullable=True)
     detected_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

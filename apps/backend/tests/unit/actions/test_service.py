@@ -1,6 +1,3 @@
-from sqlalchemy import create_engine
-from sqlalchemy.orm import Session
-
 from novel_signal.db import Base
 from novel_signal.modules.actions.models import Action, ActionStatusHistory
 from novel_signal.modules.actions.schemas import ActionCreate, ActionTransition, ChangeEventCreate
@@ -10,6 +7,8 @@ from novel_signal.modules.actions.service import (
     create_change,
     transition_action,
 )
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session
 
 
 def session() -> Session:

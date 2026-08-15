@@ -1,7 +1,10 @@
+# ruff: noqa: B008
+
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from novel_signal.db import get_db
+
 from . import repository, service
 from .schemas import (
     ActionCreate,
@@ -27,7 +30,7 @@ def _expected_error(error: service.ActionsError) -> HTTPException:
 
 @router.post("/changes", response_model=ChangeEventRead, status_code=status.HTTP_201_CREATED)
 def create_change(data: ChangeEventCreate, session: Session = Depends(get_db)) -> ChangeEventRead:
-    return service.create_change(session, data)
+    return ChangeEventRead.model_validate(service.create_change(session, data))
 
 
 @router.get("/changes", response_model=Page)
@@ -51,7 +54,7 @@ def change(event_id: str, session: Session = Depends(get_db)) -> ChangeEventRead
     row = repository.get_change(session, event_id)
     if not row:
         raise HTTPException(status_code=404, detail="change event not found")
-    return row
+    return ChangeEventRead.model_validate(row)
 
 
 @router.post(
@@ -63,7 +66,7 @@ def create_action_from_change(
     if data.change_event_id != event_id:
         raise HTTPException(status_code=422, detail="change_event_id must match the path")
     try:
-        return service.create_action(session, data)
+        return ActionRead.model_validate(service.create_action(session, data))
     except service.ActionsError as error:
         raise _expected_error(error) from error
 
@@ -71,7 +74,7 @@ def create_action_from_change(
 @router.post("/actions", response_model=ActionRead, status_code=status.HTTP_201_CREATED)
 def create_action(data: ActionCreate, session: Session = Depends(get_db)) -> ActionRead:
     try:
-        return service.create_action(session, data)
+        return ActionRead.model_validate(service.create_action(session, data))
     except service.ActionsError as error:
         raise _expected_error(error) from error
 
@@ -97,7 +100,7 @@ def action(action_id: str, session: Session = Depends(get_db)) -> ActionDetail:
     row = repository.get_action(session, action_id)
     if not row:
         raise HTTPException(status_code=404, detail="action not found")
-    return row
+    return ActionDetail.model_validate(row)
 
 
 @router.post("/actions/{action_id}/transition", response_model=ActionRead)
@@ -108,6 +111,6 @@ def transition(
     if not row:
         raise HTTPException(status_code=404, detail="action not found")
     try:
-        return service.transition_action(session, row, data)
+        return ActionRead.model_validate(service.transition_action(session, row, data))
     except service.ActionsError as error:
         raise _expected_error(error) from error

@@ -1,6 +1,5 @@
 import pytest
 from fastapi import HTTPException
-
 from novel_signal.api.dependencies import require_internal_access
 
 
