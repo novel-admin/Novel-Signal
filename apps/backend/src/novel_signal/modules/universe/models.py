@@ -3,6 +3,7 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, datetime
 from enum import StrEnum
+from typing import TYPE_CHECKING
 
 from sqlalchemy import (
     Boolean,
@@ -21,6 +22,9 @@ from sqlalchemy import Enum as SAEnum
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from novel_signal.db import Base
+
+if TYPE_CHECKING:
+    from novel_signal.modules.keywords.models import TrackingTarget
 
 
 def utc_now() -> datetime:
@@ -174,6 +178,9 @@ class Product(TimestampedArchiveMixin, Base):
     battle_cards: Mapped[list[BattleCard]] = relationship(
         back_populates="product", passive_deletes=True
     )
+    tracking_targets: Mapped[list[TrackingTarget]] = relationship(
+        back_populates="product", passive_deletes=True
+    )
 
 
 class CompetitorProduct(TimestampedArchiveMixin, Base):
@@ -227,6 +234,9 @@ class CompetitorProduct(TimestampedArchiveMixin, Base):
 
     competitor: Mapped[Competitor] = relationship(back_populates="competitor_products")
     battle_card_items: Mapped[list[BattleCardItem]] = relationship(
+        back_populates="competitor_product", passive_deletes=True
+    )
+    tracking_targets: Mapped[list[TrackingTarget]] = relationship(
         back_populates="competitor_product", passive_deletes=True
     )
 
