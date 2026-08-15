@@ -7,7 +7,10 @@ export const metadata: Metadata = {
   description: "Evidence-first competitive intelligence",
 };
 
-const links = ["Universe", "Keywords", "Products", "Sources", "Changes", "Actions", "Operations"];
+const links = [
+  ["Universe", "/universe"], ["Keywords", "/keywords"], ["Products", "/products"],
+  ["Sources", "/sources"], ["Changes", "/changes"], ["Actions", "/actions"], ["Operations", "/operations"],
+] as const;
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
@@ -18,8 +21,8 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
             <div className="brand">Novel Signal</div>
             <nav className="nav">
               <Link href="/">Overview</Link>
-              {links.map((label) => (
-                <Link key={label} href={`/${label.toLowerCase()}`}>{label}</Link>
+              {links.map(([label, href]) => (
+                <Link key={label} href={href}>{label}</Link>
               ))}
             </nav>
           </aside>
