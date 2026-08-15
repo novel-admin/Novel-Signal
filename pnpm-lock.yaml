@@ -10,6 +10,9 @@ importers:
 
   apps/web:
     dependencies:
+      '@novel-signal/api-client':
+        specifier: workspace:*
+        version: link:../../packages/api-client
       next:
         specifier: ^15.1.6
         version: 15.5.23(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
