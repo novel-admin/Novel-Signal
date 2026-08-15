@@ -173,6 +173,7 @@ def test_product_validation_filters_archive_and_restore_conflicts(client: TestCl
 
 def test_competitor_product_rules_update_and_filters(client: TestClient) -> None:
     competitor = create_competitor(client)
+    other_competitor = create_competitor(client, "Other competitor")
     item = create_competitor_product(client, competitor["id"])
     assert item["marketplace_product_id"] == "B000000002"
     assert client.get(f"{BASE}/competitor-products/{item['id']}").status_code == 200
@@ -214,6 +215,30 @@ def test_competitor_product_rules_update_and_filters(client: TestClient) -> None
         },
     )
     assert duplicate.status_code == 409
+    cross_competitor_duplicate = client.post(
+        f"{BASE}/competitor-products",
+        json={
+            "competitor_id": other_competitor["id"],
+            "name": "Cross competitor duplicate",
+            "brand": "Other",
+            "category": "Baby Care",
+            "marketplace_product_id": "B000000002",
+            "tracking_tier": "T1",
+        },
+    )
+    assert cross_competitor_duplicate.status_code == 409
+    assert cross_competitor_duplicate.json()["detail"]["code"] == "competitor_product_conflict"
+
+    assert client.post(f"{BASE}/competitor-products/{item['id']}/archive").status_code == 200
+    replacement = create_competitor_product(
+        client,
+        other_competitor["id"],
+        asin="B000000002",
+        name="Replacement listing owner",
+    )
+    assert replacement["id"] != item["id"]
+    restore = client.post(f"{BASE}/competitor-products/{item['id']}/restore")
+    assert restore.status_code == 409
     assert (
         client.post(
             f"{BASE}/competitor-products",

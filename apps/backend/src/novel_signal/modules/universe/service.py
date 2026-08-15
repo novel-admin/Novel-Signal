@@ -179,7 +179,7 @@ class UniverseService:
     def create_competitor_product(self, payload: CompetitorProductCreate) -> CompetitorProduct:
         self._require_active_competitor(payload.competitor_id)
         self._ensure_competitor_product_identity_available(
-            payload.competitor_id, payload.marketplace, payload.marketplace_product_id
+            payload.marketplace, payload.marketplace_product_id
         )
         return self._persist(CompetitorProduct(**payload.model_dump()))
 
@@ -194,7 +194,7 @@ class UniverseService:
         identity = values.get("marketplace_product_id", entity.marketplace_product_id)
         validate_marketplace_product_id(marketplace, identity)
         self._ensure_competitor_product_identity_available(
-            competitor_id, marketplace, identity, exclude_id=entity.id
+            marketplace, identity, exclude_id=entity.id
         )
         self._apply(entity, values)
         return self._persist(entity)
@@ -206,7 +206,6 @@ class UniverseService:
         entity = self._require_competitor_product(entity_id)
         self._require_active_competitor(entity.competitor_id)
         self._ensure_competitor_product_identity_available(
-            entity.competitor_id,
             entity.marketplace,
             entity.marketplace_product_id,
             exclude_id=entity.id,
@@ -441,17 +440,16 @@ class UniverseService:
 
     def _ensure_competitor_product_identity_available(
         self,
-        competitor_id: uuid.UUID,
         marketplace: Marketplace,
         identity: str | None,
         *,
         exclude_id: uuid.UUID | None = None,
     ) -> None:
         if self.repository.active_competitor_product_identity_exists(
-            competitor_id, marketplace, identity, exclude_id=exclude_id
+            marketplace, identity, exclude_id=exclude_id
         ):
             raise UniverseConflictError(
-                "This active marketplace product is already tracked for the competitor",
+                "This active marketplace product is already tracked by a competitor product",
                 code="competitor_product_conflict",
             )
 
@@ -500,8 +498,8 @@ class UniverseService:
             "uq_products_active_marketplace_identity": (
                 "this marketplace product is already tracked"
             ),
-            "uq_competitor_products_active_identity": (
-                "this marketplace product is already tracked for the competitor"
+            "uq_competitor_products_active_marketplace_identity": (
+                "this marketplace product is already tracked by an active competitor product"
             ),
             "uq_battle_card_items_active_mapping": (
                 "the competitor product is already in this battle card"

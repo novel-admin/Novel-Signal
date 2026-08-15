@@ -28,7 +28,7 @@ erDiagram
         uuid id PK
         uuid competitor_id FK
         enum marketplace
-        string marketplace_product_id "unique per competitor while active"
+        string marketplace_product_id "unique per marketplace while active"
         enum tracking_tier
         datetime archived_at
     }

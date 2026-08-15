@@ -164,3 +164,5 @@ button { color: inherit; }
 .keyword-filters input, .keyword-filters select, .bulk-bar select { min-height: 38px; border: 1px solid #303947; border-radius: 8px; background: #0b0e13; color: var(--text); padding: 8px 10px; }
 .keyword-filters input { min-width: 240px; flex: 1; }
 .bulk-bar { background: #121d1a; color: var(--accent); }
+.pagination { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 18px; border-top: 1px solid var(--line); color: var(--muted); font-size: 13px; }
+.pagination > div { display: flex; gap: 8px; }

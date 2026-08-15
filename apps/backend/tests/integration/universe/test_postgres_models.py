@@ -82,6 +82,7 @@ def test_postgres_competitor_product_uniqueness_and_fk_restriction(
     postgres_session: Session,
 ) -> None:
     competitor = Competitor(name=f"Competitor-{uuid4()}")
+    other_competitor = Competitor(name=f"Other-{uuid4()}")
     marketplace_product_id = f"ID-{uuid4()}"
     competitor_product = CompetitorProduct(
         competitor=competitor,
@@ -92,13 +93,13 @@ def test_postgres_competitor_product_uniqueness_and_fk_restriction(
         marketplace_product_id=marketplace_product_id,
         tracking_tier=TrackingTier.T2,
     )
-    postgres_session.add(competitor_product)
+    postgres_session.add_all([competitor_product, other_competitor])
     postgres_session.flush()
 
     with pytest.raises(IntegrityError), postgres_session.begin_nested():
         postgres_session.add(
             CompetitorProduct(
-                competitor=competitor,
+                competitor=other_competitor,
                 name="Duplicate tracked product",
                 brand="Tracked brand",
                 category="Baby Care",

@@ -50,7 +50,6 @@ SPECS: dict[CsvEntity, CsvSpec] = {
         CompetitorCreate,
         Competitor,
         (
-            "id",
             "name",
             "parent_company",
             "amazon_store_url",
@@ -60,10 +59,8 @@ SPECS: dict[CsvEntity, CsvSpec] = {
             "threat_rating",
             "analyst_owner",
             "notes",
-            "archived_at",
         ),
         (
-            "11111111-1111-4111-8111-111111111111",
             "Sample Competitor",
             "Sample Parent",
             "",
@@ -73,14 +70,12 @@ SPECS: dict[CsvEntity, CsvSpec] = {
             "3",
             "Sample Analyst",
             "Template sample only",
-            "",
         ),
     ),
     "products": CsvSpec(
         ProductCreate,
         Product,
         (
-            "id",
             "internal_sku",
             "name",
             "brand",
@@ -91,10 +86,8 @@ SPECS: dict[CsvEntity, CsvSpec] = {
             "pack_quantity",
             "pack_unit",
             "tracking_tier",
-            "archived_at",
         ),
         (
-            "22222222-2222-4222-8222-222222222222",
             "SAMPLE-SKU-001",
             "Sample Product",
             "Sample Brand",
@@ -105,15 +98,13 @@ SPECS: dict[CsvEntity, CsvSpec] = {
             "4",
             "packs",
             "T1",
-            "",
         ),
     ),
     "competitor-products": CsvSpec(
         CompetitorProductCreate,
         CompetitorProduct,
         (
-            "id",
-            "competitor_id",
+            "competitor_name",
             "name",
             "brand",
             "category",
@@ -123,11 +114,9 @@ SPECS: dict[CsvEntity, CsvSpec] = {
             "pack_quantity",
             "pack_unit",
             "tracking_tier",
-            "archived_at",
         ),
         (
-            "33333333-3333-4333-8333-333333333333",
-            "11111111-1111-4111-8111-111111111111",
+            "Sample Competitor",
             "Sample Competitor Product",
             "Sample Brand",
             "Baby Care",
@@ -137,48 +126,45 @@ SPECS: dict[CsvEntity, CsvSpec] = {
             "4",
             "packs",
             "T1",
-            "",
         ),
     ),
     "battle-cards": CsvSpec(
         BattleCardFields,
         BattleCard,
-        ("id", "product_id", "name", "status", "comparison_notes", "archived_at"),
+        ("product_internal_sku", "name", "status", "comparison_notes"),
         (
-            "44444444-4444-4444-8444-444444444444",
-            "22222222-2222-4222-8222-222222222222",
+            "SAMPLE-SKU-001",
             "Sample Battle Card",
             "draft",
             "Template sample only",
-            "",
         ),
     ),
     "battle-card-items": CsvSpec(
         BattleCardItemCreate,
         BattleCardItem,
         (
-            "id",
-            "battle_card_id",
-            "competitor_product_id",
+            "battle_card_product_internal_sku",
+            "battle_card_name",
+            "competitor_marketplace",
+            "competitor_marketplace_product_id",
             "priority_order",
             "same_pack_basis",
             "same_price_band",
             "same_category",
             "same_use_case",
             "notes",
-            "archived_at",
         ),
         (
-            "55555555-5555-4555-8555-555555555555",
-            "44444444-4444-4444-8444-444444444444",
-            "33333333-3333-4333-8333-333333333333",
+            "SAMPLE-SKU-001",
+            "Sample Battle Card",
+            "amazon_in",
+            "B0SAMPLE02",
             "0",
             "true",
             "false",
             "true",
             "true",
             "Template sample only",
-            "",
         ),
     ),
 }
@@ -244,10 +230,7 @@ class UniverseCsvService:
         if not include_archived:
             query = query.where(spec.model.archived_at.is_(None))
         records = self.session.scalars(query).all()
-        rows = [
-            {column: self._serialize(getattr(record, column)) for column in spec.columns}
-            for record in records
-        ]
+        rows = [self._export_row(entity, record) for record in records]
         return self._write_rows(spec.columns, rows)
 
     def _validate_row(
@@ -263,6 +246,9 @@ class UniverseCsvService:
         entity_id = self._uuid_value(values.pop("id", ""), row_number, "id", errors)
         archived_at = self._datetime_value(values.pop("archived_at", ""), row_number, errors)
         payload = {key: (None if value == "" else value) for key, value in values.items()}
+        self._resolve_references(entity, row_number, payload, errors)
+        if errors:
+            return errors, None
         try:
             parsed = spec.schema.model_validate(payload)
         except ValidationError as error:
@@ -340,7 +326,7 @@ class UniverseCsvService:
                 )
             identity = data.get("marketplace_product_id")
             if identity:
-                key = f"{data['competitor_id']}:{data['marketplace']}:{identity}"
+                key = f"{data['marketplace']}:{identity}"
                 self._duplicate_or_conflict(
                     row,
                     "marketplace_product_id",
@@ -348,7 +334,7 @@ class UniverseCsvService:
                     seen,
                     errors,
                     self.repository.active_competitor_product_identity_exists(
-                        data["competitor_id"], data["marketplace"], identity
+                        data["marketplace"], identity
                     ),
                 )
         elif entity == "battle-cards":
@@ -396,6 +382,112 @@ class UniverseCsvService:
                     data["battle_card_id"], data["competitor_product_id"]
                 ),
             )
+
+    def _resolve_references(
+        self,
+        entity: CsvEntity,
+        row: int,
+        payload: dict[str, Any],
+        errors: list[CsvRowError],
+    ) -> None:
+        if entity == "competitor-products":
+            competitor_name = str(payload.pop("competitor_name", "") or "")
+            competitor = self.repository.get_active_competitor_by_name(competitor_name)
+            if competitor is None:
+                errors.append(
+                    CsvRowError(
+                        row=row,
+                        field="competitor_name",
+                        code="missing_reference",
+                        message="An active competitor with this name is required",
+                    )
+                )
+            else:
+                payload["competitor_id"] = competitor.id
+        elif entity == "battle-cards":
+            internal_sku = str(payload.pop("product_internal_sku", "") or "")
+            product = self.repository.get_active_product_by_sku(internal_sku)
+            if product is None:
+                errors.append(
+                    CsvRowError(
+                        row=row,
+                        field="product_internal_sku",
+                        code="missing_reference",
+                        message="An active owned product with this internal SKU is required",
+                    )
+                )
+            else:
+                payload["product_id"] = product.id
+        elif entity == "battle-card-items":
+            internal_sku = str(payload.pop("battle_card_product_internal_sku", "") or "")
+            card_name = str(payload.pop("battle_card_name", "") or "")
+            product = self.repository.get_active_product_by_sku(internal_sku)
+            cards = (
+                self.repository.get_active_battle_cards_by_reference(product.id, card_name)
+                if product is not None
+                else []
+            )
+            if len(cards) != 1:
+                errors.append(
+                    CsvRowError(
+                        row=row,
+                        field="battle_card_name",
+                        code="ambiguous_reference" if len(cards) > 1 else "missing_reference",
+                        message=(
+                            "Battle-card reference is ambiguous"
+                            if len(cards) > 1
+                            else "An active battle card matching product SKU and name is required"
+                        ),
+                    )
+                )
+            else:
+                payload["battle_card_id"] = cards[0].id
+            marketplace = str(payload.pop("competitor_marketplace", "") or "")
+            identity = str(payload.pop("competitor_marketplace_product_id", "") or "").upper()
+            competitor_product = self.repository.get_active_competitor_product_by_identity(
+                marketplace, identity
+            )
+            if competitor_product is None:
+                errors.append(
+                    CsvRowError(
+                        row=row,
+                        field="competitor_marketplace_product_id",
+                        code="missing_reference",
+                        message=(
+                            "An active competitor product with this marketplace identity "
+                            "is required"
+                        ),
+                    )
+                )
+            else:
+                payload["competitor_product_id"] = competitor_product.id
+
+    def _export_row(self, entity: CsvEntity, record: Any) -> dict[str, str]:
+        if entity == "competitor-products":
+            values = {
+                "competitor_name": record.competitor.name,
+                **{column: getattr(record, column) for column in SPECS[entity].columns[1:]},
+            }
+        elif entity == "battle-cards":
+            values = {
+                "product_internal_sku": record.product.internal_sku,
+                "name": record.name,
+                "status": record.status,
+                "comparison_notes": record.comparison_notes,
+            }
+        elif entity == "battle-card-items":
+            values = {
+                "battle_card_product_internal_sku": record.battle_card.product.internal_sku,
+                "battle_card_name": record.battle_card.name,
+                "competitor_marketplace": record.competitor_product.marketplace,
+                "competitor_marketplace_product_id": (
+                    record.competitor_product.marketplace_product_id
+                ),
+                **{column: getattr(record, column) for column in SPECS[entity].columns[4:]},
+            }
+        else:
+            values = {column: getattr(record, column) for column in SPECS[entity].columns}
+        return {key: self._serialize(value) for key, value in values.items()}
 
     @staticmethod
     def _duplicate_or_conflict(
