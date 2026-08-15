@@ -3,6 +3,7 @@ from logging.config import fileConfig
 from alembic import context
 from novel_signal.config import get_settings
 from novel_signal.db import Base
+from novel_signal.modules.universe import models as universe_models  # noqa: F401
 from sqlalchemy import engine_from_config, pool
 
 config = context.config
