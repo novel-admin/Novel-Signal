@@ -204,8 +204,7 @@ class CompetitorProduct(TimestampedArchiveMixin, Base):
         Index("ix_competitor_products_competitor_id", "competitor_id"),
         Index("ix_competitor_products_archived_at", "archived_at"),
         Index(
-            "uq_competitor_products_active_identity",
-            "competitor_id",
+            "uq_competitor_products_active_marketplace_identity",
             "marketplace",
             "marketplace_product_id",
             unique=True,

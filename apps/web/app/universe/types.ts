@@ -80,6 +80,11 @@ export type UniverseData = {
   products: Product[];
   competitorProducts: CompetitorProduct[];
   battleCards: BattleCard[];
+  pagination: Record<"competitors" | "products" | "competitor-products" | "battle-cards", {
+    total: number;
+    limit: number;
+    offset: number;
+  }>;
 };
 
 export type CsvRowError = {

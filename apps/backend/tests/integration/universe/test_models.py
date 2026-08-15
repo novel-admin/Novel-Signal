@@ -146,19 +146,14 @@ def test_product_internal_sku_and_marketplace_identity_are_unique(engine: Engine
             session.commit()
 
 
-def test_competitor_marketplace_identity_is_unique_per_competitor(engine: Engine) -> None:
+def test_competitor_marketplace_identity_is_unique_across_competitors(engine: Engine) -> None:
     with Session(engine) as session:
         first_competitor = Competitor(name="First")
         second_competitor = Competitor(name="Second")
-        session.add_all(
-            [
-                make_competitor_product(first_competitor),
-                make_competitor_product(second_competitor),
-            ]
-        )
+        session.add(make_competitor_product(first_competitor))
         session.commit()
 
-        session.add(make_competitor_product(first_competitor))
+        session.add(make_competitor_product(second_competitor))
         with pytest.raises(IntegrityError):
             session.commit()
 

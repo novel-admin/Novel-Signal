@@ -42,19 +42,34 @@ export async function apiRequest<T>(path: string, init?: RequestInit): Promise<T
   return body as T;
 }
 
-export async function loadUniverse(includeArchived: boolean): Promise<UniverseData> {
-  const query = includeArchived ? "?include_archived=true" : "";
+type UniverseTab = "competitors" | "products" | "competitor-products" | "battle-cards";
+
+export async function loadUniverse(
+  includeArchived: boolean,
+  offsets: Record<UniverseTab, number>,
+): Promise<UniverseData> {
+  const query = (tab: UniverseTab) => {
+    const params = new URLSearchParams({ limit: "50", offset: String(offsets[tab]) });
+    if (includeArchived) params.set("include_archived", "true");
+    return `?${params.toString()}`;
+  };
   const [competitors, products, competitorProducts, battleCards] = await Promise.all([
-    apiRequest<ListResponse<Competitor>>(`/universe/competitors${query}`),
-    apiRequest<ListResponse<Product>>(`/universe/products${query}`),
-    apiRequest<ListResponse<CompetitorProduct>>(`/universe/competitor-products${query}`),
-    apiRequest<ListResponse<BattleCard>>(`/universe/battle-cards${query}`),
+    apiRequest<ListResponse<Competitor>>(`/universe/competitors${query("competitors")}`),
+    apiRequest<ListResponse<Product>>(`/universe/products${query("products")}`),
+    apiRequest<ListResponse<CompetitorProduct>>(`/universe/competitor-products${query("competitor-products")}`),
+    apiRequest<ListResponse<BattleCard>>(`/universe/battle-cards${query("battle-cards")}`),
   ]);
   return {
     competitors: competitors.items,
     products: products.items,
     competitorProducts: competitorProducts.items,
     battleCards: battleCards.items,
+    pagination: {
+      competitors,
+      products,
+      "competitor-products": competitorProducts,
+      "battle-cards": battleCards,
+    },
   };
 }
 

@@ -2,6 +2,7 @@
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 
+import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { apiRequest, csvUrl, importCsv, loadUniverse, validateCsv } from "./api";
 import type {
   BattleCard,
@@ -38,6 +39,19 @@ const emptyData: UniverseData = {
   products: [],
   competitorProducts: [],
   battleCards: [],
+  pagination: {
+    competitors: { total: 0, limit: 50, offset: 0 },
+    products: { total: 0, limit: 50, offset: 0 },
+    "competitor-products": { total: 0, limit: 50, offset: 0 },
+    "battle-cards": { total: 0, limit: 50, offset: 0 },
+  },
+};
+
+const initialOffsets: Record<Tab, number> = {
+  competitors: 0,
+  products: 0,
+  "competitor-products": 0,
+  "battle-cards": 0,
 };
 
 function optional(value: string): string | undefined {
@@ -67,6 +81,7 @@ export default function UniverseClient() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [includeArchived, setIncludeArchived] = useState(false);
+  const [offsets, setOffsets] = useState<Record<Tab, number>>(initialOffsets);
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState<Entity | null>(null);
   const [formOpen, setFormOpen] = useState(false);
@@ -80,24 +95,32 @@ export default function UniverseClient() {
     setLoading(true);
     setError(null);
     try {
-      setData(await loadUniverse(includeArchived));
+      setData(await loadUniverse(includeArchived, offsets));
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "Unable to load Universe");
     } finally {
       setLoading(false);
     }
-  }, [includeArchived]);
+  }, [includeArchived, offsets]);
 
   useEffect(() => {
     void reload();
   }, [reload]);
 
+  useEffect(() => {
+    const page = data.pagination[activeTab];
+    if (!loading && page.offset > 0 && page.offset >= page.total) {
+      const lastOffset = page.total === 0 ? 0 : Math.floor((page.total - 1) / page.limit) * page.limit;
+      setOffsets((current) => ({ ...current, [activeTab]: lastOffset }));
+    }
+  }, [activeTab, data.pagination, loading]);
+
   const counts = useMemo(
     () => ({
-      competitors: data.competitors.length,
-      products: data.products.length,
-      "competitor-products": data.competitorProducts.length,
-      "battle-cards": data.battleCards.length,
+      competitors: data.pagination.competitors.total,
+      products: data.pagination.products.total,
+      "competitor-products": data.pagination["competitor-products"].total,
+      "battle-cards": data.pagination["battle-cards"].total,
     }),
     [data],
   );
@@ -114,6 +137,14 @@ export default function UniverseClient() {
     setCsvFileName("");
     setCsvResult(null);
     setCsvMessage(null);
+  }
+
+  function changePage(direction: -1 | 1) {
+    const page = data.pagination[activeTab];
+    setOffsets((current) => ({
+      ...current,
+      [activeTab]: Math.max(0, current[activeTab] + direction * page.limit),
+    }));
   }
 
   async function chooseCsv(file: File | undefined) {
@@ -222,7 +253,10 @@ export default function UniverseClient() {
           <label className="archive-toggle">
             <input
               checked={includeArchived}
-              onChange={(event) => setIncludeArchived(event.target.checked)}
+              onChange={(event) => {
+                setIncludeArchived(event.target.checked);
+                setOffsets(initialOffsets);
+              }}
               type="checkbox"
             />
             Show archived
@@ -272,6 +306,14 @@ export default function UniverseClient() {
         />
       )}
 
+      {!loading && records.length > 0 ? (
+        <Pagination
+          page={data.pagination[activeTab]}
+          onPrevious={() => changePage(-1)}
+          onNext={() => changePage(1)}
+        />
+      ) : null}
+
       {formOpen ? (
         <EntityForm
           data={data}
@@ -284,6 +326,18 @@ export default function UniverseClient() {
       ) : null}
     </section>
   );
+}
+
+export function paginationRange(page: { total: number; limit: number; offset: number }) {
+  return {
+    start: page.total === 0 ? 0 : page.offset + 1,
+    end: Math.min(page.offset + page.limit, page.total),
+  };
+}
+
+function Pagination({ page, onPrevious, onNext }: { page: { total: number; limit: number; offset: number }; onPrevious: () => void; onNext: () => void }) {
+  const range = paginationRange(page);
+  return <div className="pagination"><span>Showing {range.start}–{range.end} of {page.total}</span><div><button className="button" disabled={page.offset === 0} onClick={onPrevious} type="button">Previous</button><button className="button" disabled={range.end >= page.total} onClick={onNext} type="button">Next</button></div></div>;
 }
 
 function tabEndpoint(tab: Tab): string {
@@ -479,9 +533,7 @@ function TableRow({
       {cells.map((cell, index) => <td key={index}>{cell}</td>)}
       <td><div className="row-actions">
         <button className="text-button" onClick={() => onEdit(record)} type="button">Edit</button>
-        <button className="text-button" onClick={() => onStateChange(record, !archived)} type="button">
-          {archived ? "Restore" : "Archive"}
-        </button>
+        {archived ? <button className="text-button" onClick={() => onStateChange(record, false)} type="button">Restore</button> : <ConfirmDialog label="Archive" confirmLabel="Confirm Archive" title={`Archive ${singularLabel(tab)}?`} message="This record will be hidden from active workflows. You can restore it later." onConfirm={() => onStateChange(record, true)} />}
       </div></td>
     </tr>
   );

@@ -56,6 +56,14 @@ class UniverseRepository:
     def get_competitor(self, entity_id: uuid.UUID) -> Competitor | None:
         return self.session.get(Competitor, entity_id)
 
+    def get_active_competitor_by_name(self, name: str) -> Competitor | None:
+        return self.session.scalar(
+            select(Competitor).where(
+                Competitor.archived_at.is_(None),
+                func.lower(func.btrim(Competitor.name)) == name.strip().lower(),
+            )
+        )
+
     def list_products(
         self,
         *,
@@ -91,6 +99,13 @@ class UniverseRepository:
 
     def get_product(self, entity_id: uuid.UUID) -> Product | None:
         return self.session.get(Product, entity_id)
+
+    def get_active_product_by_sku(self, internal_sku: str) -> Product | None:
+        return self.session.scalar(
+            select(Product).where(
+                Product.archived_at.is_(None), Product.internal_sku == internal_sku
+            )
+        )
 
     def list_competitor_products(
         self,
@@ -133,6 +148,30 @@ class UniverseRepository:
 
     def get_competitor_product(self, entity_id: uuid.UUID) -> CompetitorProduct | None:
         return self.session.get(CompetitorProduct, entity_id)
+
+    def get_active_competitor_product_by_identity(
+        self, marketplace: object, identity: str
+    ) -> CompetitorProduct | None:
+        return self.session.scalar(
+            select(CompetitorProduct).where(
+                CompetitorProduct.archived_at.is_(None),
+                CompetitorProduct.marketplace == marketplace,
+                CompetitorProduct.marketplace_product_id == identity,
+            )
+        )
+
+    def get_active_battle_cards_by_reference(
+        self, product_id: uuid.UUID, name: str
+    ) -> list[BattleCard]:
+        return list(
+            self.session.scalars(
+                select(BattleCard).where(
+                    BattleCard.archived_at.is_(None),
+                    BattleCard.product_id == product_id,
+                    func.lower(func.btrim(BattleCard.name)) == name.strip().lower(),
+                )
+            )
+        )
 
     def list_battle_cards(
         self,
@@ -249,7 +288,6 @@ class UniverseRepository:
 
     def active_competitor_product_identity_exists(
         self,
-        competitor_id: uuid.UUID,
         marketplace: object,
         identity: str | None,
         *,
@@ -259,7 +297,6 @@ class UniverseRepository:
             return False
         query = select(CompetitorProduct.id).where(
             CompetitorProduct.archived_at.is_(None),
-            CompetitorProduct.competitor_id == competitor_id,
             CompetitorProduct.marketplace == marketplace,
             CompetitorProduct.marketplace_product_id == identity,
         )

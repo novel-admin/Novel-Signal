@@ -8,9 +8,10 @@ type ConfirmDialogProps = {
   message?: string;
   onConfirm: () => void | Promise<void>;
   disabled?: boolean;
+  confirmLabel?: string;
 };
 
-export function ConfirmDialog({ label, title = "Confirm action", message = "This action cannot be undone.", onConfirm, disabled }: ConfirmDialogProps) {
+export function ConfirmDialog({ label, title = "Confirm action", message = "This action cannot be undone.", onConfirm, disabled, confirmLabel = "Confirm" }: ConfirmDialogProps) {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   async function confirm() {
@@ -23,7 +24,7 @@ export function ConfirmDialog({ label, title = "Confirm action", message = "This
       <section className="dialog" role="dialog" aria-modal="true" aria-labelledby="confirm-title">
         <h2 id="confirm-title">{title}</h2>
         <p>{message}</p>
-        <div className="dialog-actions"><button type="button" className="button" onClick={() => setOpen(false)} disabled={busy}>Cancel</button><button type="button" className="button button-danger" onClick={confirm} disabled={busy}>{busy ? "Working…" : "Confirm"}</button></div>
+        <div className="dialog-actions"><button type="button" className="button" onClick={() => setOpen(false)} disabled={busy}>Cancel</button><button type="button" className="button button-danger" onClick={confirm} disabled={busy}>{busy ? "Working…" : confirmLabel}</button></div>
       </section>
     </div>}
   </>;

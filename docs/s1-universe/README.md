@@ -28,6 +28,12 @@ Records are never hard deleted. Archive sets `archived_at`; restore clears it af
 name, SKU, marketplace identity and battle-card mapping conflicts. Active list endpoints exclude
 archived rows unless `include_archived=true` is supplied. Archived rows remain retrievable by ID.
 
+Within `CompetitorProduct`, `(marketplace, marketplace_product_id)` identifies one active listing
+across all competitors. Archiving releases that identity for reuse; restoring rechecks ownership
+and returns a conflict when another active competitor product now uses it. Owned `Product`
+identities use the same marketplace rule independently within the Product table; S1 intentionally
+does not create cross-table uniqueness.
+
 ## API
 
 The five resources live below `/api/v1/universe`:
@@ -78,8 +84,17 @@ CSV endpoints are scoped by entity:
 - `GET /csv/{entity}/export`
 
 Valid entities are `competitors`, `products`, `competitor-products`, `battle-cards`, and
-`battle-card-items`. Templates contain stable headers and one clearly labelled sample row. IDs and
-foreign keys are included for reliable cross-file setup and round-trip export.
+`battle-card-items`. Templates contain stable business-facing headers and one clearly labelled
+sample row. Internal UUIDs are not required:
+
+- Competitor products resolve `competitor_name`.
+- Battle cards resolve `product_internal_sku`.
+- Battle-card items resolve a battle card through `battle_card_product_internal_sku` plus
+  `battle_card_name`, and resolve a competitor product through `competitor_marketplace` plus
+  `competitor_marketplace_product_id`.
+
+Missing references produce row-specific errors. A battle-card name that is not unique for its
+owned product is treated as ambiguous and fails safely. Exports use these same readable references.
 
 Dry-run parses every row, performs Pydantic and domain validation, checks in-file duplicates,
 foreign keys and database conflicts, and writes zero rows. The response includes total, valid and

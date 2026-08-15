@@ -60,7 +60,6 @@ def make_csv(columns: list[str], rows: list[list[str]]) -> str:
 
 
 COMPETITOR_COLUMNS = [
-    "id",
     "name",
     "parent_company",
     "amazon_store_url",
@@ -70,7 +69,6 @@ COMPETITOR_COLUMNS = [
     "threat_rating",
     "analyst_owner",
     "notes",
-    "archived_at",
 ]
 
 
@@ -83,7 +81,6 @@ def test_valid_dry_run_transactional_import_export_and_database_conflict(
 ) -> None:
     content = competitor_csv(
         [
-            "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
             "CSV Competitor",
             "CSV Parent",
             "",
@@ -93,7 +90,6 @@ def test_valid_dry_run_transactional_import_export_and_database_conflict(
             "4",
             "CSV Analyst",
             "Imported configuration",
-            "",
         ]
     )
     dry_run = csv_client.post(f"{BASE}/csv/competitors/dry-run", json={"csv_text": content})
@@ -128,8 +124,8 @@ def test_invalid_dry_run_reports_rows_and_actual_import_writes_nothing(
     csv_client: TestClient,
 ) -> None:
     content = competitor_csv(
-        ["", "Valid Row", "", "", "", "Baby Care", "mid", "3", "", "", ""],
-        ["", "", "", "", "", "Baby Care", "invalid-tier", "9", "", "", ""],
+        ["Valid Row", "", "", "", "Baby Care", "mid", "3", "", ""],
+        ["", "", "", "", "Baby Care", "invalid-tier", "9", "", ""],
     )
     result = csv_client.post(f"{BASE}/csv/competitors/dry-run", json={"csv_text": content}).json()
     assert result["valid"] is False
@@ -148,7 +144,7 @@ def test_invalid_dry_run_reports_rows_and_actual_import_writes_nothing(
 
 
 def test_duplicate_csv_rows_are_rejected(csv_client: TestClient) -> None:
-    row = ["", "Duplicate", "", "", "", "Baby Care", "mid", "3", "", "", ""]
+    row = ["Duplicate", "", "", "", "Baby Care", "mid", "3", "", ""]
     result = csv_client.post(
         f"{BASE}/csv/competitors/dry-run", json={"csv_text": competitor_csv(row, row)}
     ).json()
@@ -164,7 +160,6 @@ def test_product_csv_rejects_bad_asin_and_enum(csv_client: TestClient) -> None:
     columns = template_rows[0]
     bad_asin = template_rows[1].copy()
     bad_enum = template_rows[1].copy()
-    bad_enum[columns.index("id")] = "33333333-3333-4333-8333-333333333333"
     bad_enum[columns.index("internal_sku")] = "SAMPLE-SKU-002"
     bad_enum[columns.index("marketplace_product_id")] = "B0SAMPLE03"
     bad_asin[columns.index("marketplace_product_id")] = "BAD-ASIN"
@@ -202,11 +197,54 @@ def test_foreign_key_validation_and_all_templates_exports(csv_client: TestClient
     assert any(error["code"] == "missing_reference" for error in result["errors"])
 
 
+def test_competitor_product_csv_resolves_name_and_rejects_unknown_or_duplicate_asin(
+    csv_client: TestClient,
+) -> None:
+    competitor = csv_client.post(f"{BASE}/competitors", json={"name": "CSV Brand"})
+    assert competitor.status_code == 201
+    template = csv_client.get(f"{BASE}/csv/competitor-products/template").text
+    rows = list(csv.reader(io.StringIO(template)))
+    columns, sample = rows[0], rows[1]
+    sample[columns.index("competitor_name")] = "CSV Brand"
+    sample[columns.index("marketplace_product_id")] = "B000000099"
+    valid = make_csv(columns, [sample])
+    dry_run = csv_client.post(
+        f"{BASE}/csv/competitor-products/dry-run", json={"csv_text": valid}
+    ).json()
+    assert dry_run["valid"] is True
+    imported = csv_client.post(f"{BASE}/csv/competitor-products/import", json={"csv_text": valid})
+    assert imported.status_code == 200
+    assert csv_client.get(f"{BASE}/competitor-products").json()["total"] == 1
+    exported = csv_client.get(f"{BASE}/csv/competitor-products/export").text
+    assert "competitor_name" in exported.splitlines()[0]
+    assert "CSV Brand" in exported
+
+    unknown = sample.copy()
+    unknown[columns.index("competitor_name")] = "Unknown Brand"
+    unknown[columns.index("marketplace_product_id")] = "B000000098"
+    unknown_result = csv_client.post(
+        f"{BASE}/csv/competitor-products/dry-run",
+        json={"csv_text": make_csv(columns, [unknown])},
+    ).json()
+    assert unknown_result["valid"] is False
+    assert unknown_result["errors"][0]["field"] == "competitor_name"
+    assert csv_client.get(f"{BASE}/competitor-products").json()["total"] == 1
+
+    duplicate_one = sample.copy()
+    duplicate_two = sample.copy()
+    duplicate_one[columns.index("marketplace_product_id")] = "B000000097"
+    duplicate_two[columns.index("marketplace_product_id")] = "B000000097"
+    duplicate_result = csv_client.post(
+        f"{BASE}/csv/competitor-products/dry-run",
+        json={"csv_text": make_csv(columns, [duplicate_one, duplicate_two])},
+    ).json()
+    assert duplicate_result["valid"] is False
+    assert any(error["code"] == "duplicate_csv_row" for error in duplicate_result["errors"])
+
+
 def test_import_rolls_back_when_commit_fails(monkeypatch: pytest.MonkeyPatch) -> None:
     engine = sqlite_engine()
-    content = competitor_csv(
-        ["", "Rollback Competitor", "", "", "", "Baby Care", "mid", "3", "", "", ""]
-    )
+    content = competitor_csv(["Rollback Competitor", "", "", "", "Baby Care", "mid", "3", "", ""])
     with Session(engine) as session:
         service = UniverseCsvService(session)
 
