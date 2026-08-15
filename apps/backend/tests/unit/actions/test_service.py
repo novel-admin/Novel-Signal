@@ -1,5 +1,5 @@
 from novel_signal.db import Base
-from novel_signal.modules.actions.models import Action, ActionStatusHistory
+from novel_signal.modules.actions.models import Action, ActionStatusHistory, ChangeEvent
 from novel_signal.modules.actions.schemas import ActionCreate, ActionTransition, ChangeEventCreate
 from novel_signal.modules.actions.service import (
     ActionsError,
@@ -13,7 +13,9 @@ from sqlalchemy.orm import Session
 
 def session() -> Session:
     engine = create_engine("sqlite://")
-    Base.metadata.create_all(engine)
+    Base.metadata.create_all(
+        engine, tables=[ChangeEvent.__table__, Action.__table__, ActionStatusHistory.__table__]
+    )
     return Session(engine)
 
 
