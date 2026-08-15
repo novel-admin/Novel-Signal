@@ -1,7 +1,7 @@
 from datetime import date, datetime
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class AdObservationCreate(BaseModel):
@@ -57,3 +57,24 @@ class OwnPerformanceCreate(BaseModel):
     conversions: int | None = Field(default=None, ge=0)
     payload: dict[str, Any] = {}
     evidence_ref: str | None = None
+
+
+class AdObservationRead(AdObservationCreate):
+    model_config = ConfigDict(from_attributes=True)
+    id: str
+
+
+class AdPresenceRead(PresenceUpsert):
+    model_config = ConfigDict(from_attributes=True)
+    id: str
+    ad_days: int
+
+
+class SpendEstimateRead(SpendEstimateCreate):
+    model_config = ConfigDict(from_attributes=True)
+    id: str
+
+
+class OwnPerformanceRead(OwnPerformanceCreate):
+    model_config = ConfigDict(from_attributes=True)
+    id: str

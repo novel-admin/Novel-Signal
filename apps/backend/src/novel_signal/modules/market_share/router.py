@@ -31,6 +31,11 @@ from .service import (
 router = APIRouter(prefix="/market-share", tags=["S8 Market Share"])
 
 
+@router.get("/meta")
+def module_meta() -> dict[str, str]:
+    return {"module": "S8 Market Share", "owner": "Palguna", "status": "ready"}
+
+
 def page(items: list[Any], limit: int) -> Page:
     has_more = len(items) > limit
     visible = items[:limit]

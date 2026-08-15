@@ -12,9 +12,17 @@ from novel_signal.sources.amazon.ads_api import AmazonAdsConfig
 from novel_signal.sources.meta.ad_library import MetaAdLibraryConfig
 from novel_signal.sources.meta.marketing_api import MetaMarketingConfig
 
-from .models import AdObservation, AdPresenceDaily, SpendEstimate
 from .repository import list_estimates, list_observations, list_presence
-from .schemas import AdObservationCreate, OwnPerformanceCreate, PresenceUpsert, SpendEstimateCreate
+from .schemas import (
+    AdObservationCreate,
+    AdObservationRead,
+    AdPresenceRead,
+    OwnPerformanceCreate,
+    OwnPerformanceRead,
+    PresenceUpsert,
+    SpendEstimateCreate,
+    SpendEstimateRead,
+)
 from .service import (
     create_spend_estimate,
     record_observation,
@@ -67,51 +75,68 @@ def request_sync(body: SyncRequestBody) -> dict[str, object]:
     }
 
 
-@router.post("/observations", status_code=201)
-def create_observation(body: AdObservationCreate, db: Session = Depends(get_db)) -> object:
-    return record_observation(db, body)
+@router.post("/observations", response_model=AdObservationRead, status_code=201)
+def create_observation(
+    body: AdObservationCreate, db: Session = Depends(get_db)
+) -> AdObservationRead:
+    return AdObservationRead.model_validate(record_observation(db, body))
 
 
-@router.get("/observations")
+@router.get("/observations", response_model=list[AdObservationRead])
 def get_observations(
     competitor_id: str | None = None,
     keyword_id: str | None = None,
     limit: int = Query(default=50, ge=1, le=200),
     db: Session = Depends(get_db),
-) -> list[AdObservation]:
-    return list_observations(db, competitor_id=competitor_id, keyword_id=keyword_id, limit=limit)
+) -> list[AdObservationRead]:
+    return [
+        AdObservationRead.model_validate(row)
+        for row in list_observations(
+            db, competitor_id=competitor_id, keyword_id=keyword_id, limit=limit
+        )
+    ]
 
 
-@router.put("/presence/daily", status_code=200)
-def put_presence(body: PresenceUpsert, db: Session = Depends(get_db)) -> object:
-    return upsert_presence(db, body)
+@router.put("/presence/daily", response_model=AdPresenceRead, status_code=200)
+def put_presence(body: PresenceUpsert, db: Session = Depends(get_db)) -> AdPresenceRead:
+    return AdPresenceRead.model_validate(upsert_presence(db, body))
 
 
-@router.get("/presence/daily")
+@router.get("/presence/daily", response_model=list[AdPresenceRead])
 def get_presence(
     competitor_id: str,
     keyword_id: str,
     limit: int = Query(default=90, ge=1, le=366),
     db: Session = Depends(get_db),
-) -> list[AdPresenceDaily]:
-    return list_presence(db, competitor_id=competitor_id, keyword_id=keyword_id, limit=limit)
+) -> list[AdPresenceRead]:
+    return [
+        AdPresenceRead.model_validate(row)
+        for row in list_presence(
+            db, competitor_id=competitor_id, keyword_id=keyword_id, limit=limit
+        )
+    ]
 
 
-@router.post("/spend-estimates", status_code=201)
-def post_estimate(body: SpendEstimateCreate, db: Session = Depends(get_db)) -> object:
+@router.post("/spend-estimates", response_model=SpendEstimateRead, status_code=201)
+def post_estimate(body: SpendEstimateCreate, db: Session = Depends(get_db)) -> SpendEstimateRead:
     try:
-        return create_spend_estimate(db, body)
+        return SpendEstimateRead.model_validate(create_spend_estimate(db, body))
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
-@router.get("/spend-estimates")
+@router.get("/spend-estimates", response_model=list[SpendEstimateRead])
 def get_estimates(
     competitor_id: str, limit: int = Query(default=50, ge=1, le=200), db: Session = Depends(get_db)
-) -> list[SpendEstimate]:
-    return list_estimates(db, competitor_id=competitor_id, limit=limit)
+) -> list[SpendEstimateRead]:
+    return [
+        SpendEstimateRead.model_validate(row)
+        for row in list_estimates(db, competitor_id=competitor_id, limit=limit)
+    ]
 
 
-@router.post("/own-performance", status_code=201)
-def post_own_performance(body: OwnPerformanceCreate, db: Session = Depends(get_db)) -> object:
-    return record_own_performance(db, body)
+@router.post("/own-performance", response_model=OwnPerformanceRead, status_code=201)
+def post_own_performance(
+    body: OwnPerformanceCreate, db: Session = Depends(get_db)
+) -> OwnPerformanceRead:
+    return OwnPerformanceRead.model_validate(record_own_performance(db, body))

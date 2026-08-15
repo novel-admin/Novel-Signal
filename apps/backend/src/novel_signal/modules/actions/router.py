@@ -13,6 +13,9 @@ from .schemas import (
     ActionTransition,
     ChangeEventCreate,
     ChangeEventRead,
+    GapCreate,
+    GapRead,
+    ImpactCreate,
     Page,
 )
 
@@ -31,6 +34,19 @@ def _expected_error(error: service.ActionsError) -> HTTPException:
 @router.post("/changes", response_model=ChangeEventRead, status_code=status.HTTP_201_CREATED)
 def create_change(data: ChangeEventCreate, session: Session = Depends(get_db)) -> ChangeEventRead:
     return ChangeEventRead.model_validate(service.create_change(session, data))
+
+
+@router.post("/gaps", response_model=GapRead, status_code=status.HTTP_201_CREATED)
+def create_gap(data: GapCreate, session: Session = Depends(get_db)) -> GapRead:
+    return GapRead.model_validate(service.create_gap(session, data))
+
+
+@router.post("/actions/{action_id}/impact", status_code=status.HTTP_201_CREATED)
+def add_impact(
+    action_id: str, data: ImpactCreate, session: Session = Depends(get_db)
+) -> dict[str, str | int]:
+    impact = service.add_impact(session, action_id, data)
+    return {"id": impact.id, "action_id": impact.action_id, "days_after": impact.days_after}
 
 
 @router.get("/changes", response_model=Page)

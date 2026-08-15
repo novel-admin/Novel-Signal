@@ -76,3 +76,43 @@ class ActionStatusHistory(Base):
     )
     note: Mapped[str | None] = mapped_column(Text)
     action: Mapped[Action] = relationship(back_populates="history")
+
+
+class Gap(Base):
+    __tablename__ = "gaps"
+    __table_args__ = (Index("ix_gaps_status_revenue", "status", "revenue_at_stake"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    fingerprint: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
+    dimension: Mapped[str] = mapped_column(String(40), nullable=False)
+    entity_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    keyword_id: Mapped[str | None] = mapped_column(String(36))
+    benchmark_value: Mapped[Any] = mapped_column(JSON, nullable=True)
+    current_value: Mapped[Any] = mapped_column(JSON, nullable=True)
+    gap_size: Mapped[float | None] = mapped_column(nullable=True)
+    revenue_at_stake: Mapped[float | None] = mapped_column(nullable=True)
+    root_cause: Mapped[str | None] = mapped_column(String(120))
+    confidence: Mapped[str] = mapped_column(String(20), nullable=False, default="derived")
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="open")
+    evidence: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class ActionImpact(Base):
+    __tablename__ = "action_impact"
+    __table_args__ = (UniqueConstraint("action_id", "days_after", name="uq_action_impact_day"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    action_id: Mapped[str] = mapped_column(
+        ForeignKey("actions.id", ondelete="CASCADE"), nullable=False
+    )
+    days_after: Mapped[int] = mapped_column(nullable=False)
+    metric: Mapped[str] = mapped_column(String(80), nullable=False)
+    baseline: Mapped[float | None] = mapped_column(nullable=True)
+    observed: Mapped[float | None] = mapped_column(nullable=True)
+    outcome: Mapped[str] = mapped_column(String(20), nullable=False)
+    measured_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )

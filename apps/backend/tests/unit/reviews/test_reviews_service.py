@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 def session() -> Session:
     engine = create_engine("sqlite://")
-    Base.metadata.create_all(engine)
+    Base.metadata.create_all(engine, tables=[ReviewObservation.__table__, ReviewTopic.__table__])
     return Session(engine)
 
 
@@ -45,4 +45,3 @@ def test_topic_summary_exposes_low_confidence_for_small_samples() -> None:
     assert summary
     assert all(item.confidence == "low" for item in summary)
     assert all(item.sample_size == 1 for item in summary)
-

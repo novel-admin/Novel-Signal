@@ -4,8 +4,8 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from .models import Action, ActionStatusHistory, ChangeEvent
-from .schemas import ActionCreate, ActionTransition, ChangeEventCreate
+from .models import Action, ActionImpact, ActionStatusHistory, ChangeEvent, Gap
+from .schemas import ActionCreate, ActionTransition, ChangeEventCreate, GapCreate, ImpactCreate
 
 ALLOWED_TRANSITIONS: dict[str, set[str]] = {
     "open": {"in_progress", "dismissed"},
@@ -17,6 +17,25 @@ ALLOWED_TRANSITIONS: dict[str, set[str]] = {
 
 class ActionsError(Exception):
     """Expected domain error exposed as a 4xx response by the router."""
+
+
+def create_gap(session: Session, data: GapCreate) -> Gap:
+    existing = session.scalar(select(Gap).where(Gap.fingerprint == data.fingerprint))
+    if existing:
+        return existing
+    gap = Gap(**data.model_dump())
+    session.add(gap)
+    session.commit()
+    session.refresh(gap)
+    return gap
+
+
+def add_impact(session: Session, action_id: str, data: ImpactCreate) -> ActionImpact:
+    impact = ActionImpact(action_id=action_id, **data.model_dump())
+    session.add(impact)
+    session.commit()
+    session.refresh(impact)
+    return impact
 
 
 def create_change(session: Session, data: ChangeEventCreate) -> ChangeEvent:

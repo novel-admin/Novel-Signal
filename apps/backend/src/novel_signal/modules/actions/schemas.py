@@ -74,3 +74,32 @@ class ActionDetail(ActionRead):
 class Page(BaseModel):
     items: list[Any]
     next_cursor: str | None = None
+
+
+class GapCreate(BaseModel):
+    fingerprint: str = Field(min_length=1, max_length=255)
+    dimension: str
+    entity_id: str
+    keyword_id: str | None = None
+    benchmark_value: Any = None
+    current_value: Any = None
+    gap_size: float | None = None
+    revenue_at_stake: float | None = Field(default=None, ge=0)
+    root_cause: str | None = None
+    confidence: Literal["measured", "derived", "estimated", "unknown"] = "derived"
+    evidence: dict[str, Any] = Field(default_factory=dict)
+
+
+class GapRead(GapCreate):
+    model_config = ConfigDict(from_attributes=True)
+    id: str
+    status: str
+    created_at: datetime
+
+
+class ImpactCreate(BaseModel):
+    days_after: Literal[7, 14, 30]
+    metric: str
+    baseline: float | None = None
+    observed: float | None = None
+    outcome: Literal["improved", "no_change", "worsened"]
