@@ -11,12 +11,16 @@ class AdObservationCreate(BaseModel):
     product_id: str | None = None
     keyword_id: str | None = None
     capture_id: str | None = None
+    raw_capture_id: str | None = None
+    parse_run_id: str | None = None
     ad_type: str
     sponsored_position: int | None = Field(default=None, ge=1)
     captured_at: datetime
     evidence_ref: str | None = None
     confidence: float | None = Field(default=None, ge=0, le=1)
     fingerprint: str
+    publication_status: str = "published"
+    quarantine_reason: str | None = None
 
 
 class PresenceUpsert(BaseModel):

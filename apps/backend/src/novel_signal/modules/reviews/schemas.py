@@ -14,6 +14,10 @@ class ReviewCreate(BaseModel):
     title: str | None = Field(default=None, max_length=500)
     text: str | None = Field(default=None, max_length=10000)
     captured_at: datetime
+    raw_capture_id: str | None = None
+    parse_run_id: str | None = None
+    publication_status: str = "published"
+    quarantine_reason: str | None = None
     published_on: date | None = None
     evidence: dict[str, Any] | None = None
 
@@ -63,4 +67,3 @@ class TrendRead(BaseModel):
 class Page(BaseModel):
     items: list[Any]
     next_cursor: str | None = None
-

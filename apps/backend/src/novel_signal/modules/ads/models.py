@@ -37,12 +37,16 @@ class AdObservation(Base):
     product_id: Mapped[str | None] = mapped_column(String(36))
     keyword_id: Mapped[str | None] = mapped_column(String(36))
     capture_id: Mapped[str | None] = mapped_column(String(36))
+    raw_capture_id: Mapped[str | None] = mapped_column(String(36))
+    parse_run_id: Mapped[str | None] = mapped_column(String(36))
     ad_type: Mapped[str] = mapped_column(String(40), nullable=False)
     sponsored_position: Mapped[int | None] = mapped_column(Integer)
     captured_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     evidence_ref: Mapped[str | None] = mapped_column(Text)
     confidence: Mapped[float | None] = mapped_column(Float)
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="measured")
+    publication_status: Mapped[str] = mapped_column(String(20), nullable=False, default="published")
+    quarantine_reason: Mapped[str | None] = mapped_column(Text)
     fingerprint: Mapped[str] = mapped_column(String(255), nullable=False)
 
 
