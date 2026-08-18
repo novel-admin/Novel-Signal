@@ -76,10 +76,15 @@ export default function CollectionClient() {
 
     try {
       const result = await planCollection();
+
       setNotice(
-        `${result.created} job(s) created · ${result.existing} already scheduled`,
+        result.created > 0
+          ? `${result.created} collection job(s) planned successfully · ${result.existing} already scheduled`
+          : `No new jobs required · ${result.existing} job(s) already scheduled for this window`,
       );
-      await reload();
+
+      const refreshed = await loadCollection();
+      setData(refreshed);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Unable to plan jobs");
     } finally {
