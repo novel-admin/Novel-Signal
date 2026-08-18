@@ -172,5 +172,15 @@ button { color: inherit; }
 .rank-detail { width: min(1120px, 100%); }
 @media (max-width: 1000px) { .rank-summary, .rank-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 600px) { .rank-summary, .rank-metrics { grid-template-columns: 1fr; } }
+.listing-detail { width:min(900px,100%); }
+.listing-content { display:grid; gap:14px; padding:22px; }
+.listing-content section { border-bottom:1px solid var(--line); padding-bottom:12px; }
+.listing-content p { color:var(--muted); line-height:1.55; margin:7px 0 0; white-space:pre-wrap; overflow-wrap:anywhere; }
+.long-cell { max-width:300px; overflow:hidden; text-overflow:ellipsis; }
+.listing-score { display:grid; grid-template-columns:220px 1fr 1fr; gap:14px; padding:18px; }
+.component-list div { display:flex; justify-content:space-between; gap:15px; margin-top:10px; text-transform:capitalize; }
+.component-list b { font-size:12px; }
+.comparison-wrap { padding:18px; display:grid; gap:14px; }
+@media(max-width:900px){.listing-score{grid-template-columns:1fr}}
 .pagination { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 18px; border-top: 1px solid var(--line); color: var(--muted); font-size: 13px; }
 .pagination > div { display: flex; gap: 8px; }

@@ -1,0 +1,8 @@
+export type List<T>={items:T[];total:number;limit:number;offset:number};
+export type ProductOption={id:string;name:string;marketplace_product_id?:string|null;archived_at:string|null};
+export type Snapshot={id:string;marketplace_product_id:string;product_id:string|null;competitor_product_id:string|null;captured_at:string;title:string|null;brand:string|null;category_path:string|null;description:string|null;bullets:string[];key_features:string[];a_plus_present:boolean;a_plus_sections:object[];image_urls:string[];image_hashes:string[];image_count:number;video_present:boolean;video_count:number;variation_count:number|null;variation_metadata:object|null;source_url:string|null;parser_version:string|null;completeness_score:number;completeness_breakdown:Record<string,number>};
+export type Change={id:string;marketplace_product_id:string;product_id:string|null;competitor_product_id:string|null;field_name:string;change_type:"added"|"removed"|"modified";old_value:unknown;new_value:unknown;observed_at:string};
+export type History={id:string;captured_at:string;title:string|null;bullet_count:number;image_count:number;a_plus_present:boolean;video_present:boolean;variation_count:number|null;completeness_score:number};
+export type Completeness={score:number;breakdown:Record<string,number>;achieved_components:string[];missing_components:string[]};
+export type Stats={title_length:number;bullet_count:number;description_length:number;image_count:number;a_plus_present:boolean;video_present:boolean;variation_count:number;completeness_score:number};
+export type Comparison={owned:Stats;competitor:Stats;deltas:Record<string,number|boolean>;gaps:string[]};
