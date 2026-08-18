@@ -5,6 +5,7 @@ from novel_signal.config import get_settings
 from novel_signal.db import Base
 from novel_signal.modules.actions import models as action_models  # noqa: F401
 from novel_signal.modules.keywords import models as keyword_models  # noqa: F401
+from novel_signal.modules.rank_visibility import models as rank_visibility_models  # noqa: F401
 from novel_signal.modules.universe import models as universe_models  # noqa: F401
 from sqlalchemy import engine_from_config, pool
 

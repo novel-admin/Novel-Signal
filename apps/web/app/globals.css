@@ -164,5 +164,13 @@ button { color: inherit; }
 .keyword-filters input, .keyword-filters select, .bulk-bar select { min-height: 38px; border: 1px solid #303947; border-radius: 8px; background: #0b0e13; color: var(--text); padding: 8px 10px; }
 .keyword-filters input { min-width: 240px; flex: 1; }
 .bulk-bar { background: #121d1a; color: var(--accent); }
+.rank-shell { margin-top: 30px; }
+.rank-summary, .rank-metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
+.rank-summary .card strong { font-size: 20px; }
+.rank-action { display: flex; justify-content: flex-end; padding: 14px 18px; border-bottom: 1px solid var(--line); }
+.rank-metrics { padding: 18px; }
+.rank-detail { width: min(1120px, 100%); }
+@media (max-width: 1000px) { .rank-summary, .rank-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 600px) { .rank-summary, .rank-metrics { grid-template-columns: 1fr; } }
 .pagination { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 18px; border-top: 1px solid var(--line); color: var(--muted); font-size: 13px; }
 .pagination > div { display: flex; gap: 8px; }
