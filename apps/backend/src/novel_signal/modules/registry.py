@@ -8,6 +8,7 @@ from novel_signal.modules.commerce.router import router as commerce_router
 from novel_signal.modules.keywords.router import router as keywords_router
 from novel_signal.modules.listings.router import router as listings_router
 from novel_signal.modules.market_share.router import router as market_share_router
+from novel_signal.modules.rank_visibility.router import router as rank_visibility_router
 from novel_signal.modules.reviews.router import router as reviews_router
 from novel_signal.modules.scorecards.router import router as scorecards_router
 from novel_signal.modules.universe.router import router as universe_router
@@ -16,6 +17,7 @@ from novel_signal.modules.visibility.router import router as visibility_router
 module_routers: tuple[APIRouter, ...] = (
     universe_router,
     keywords_router,
+    rank_visibility_router,
     visibility_router,
     ads_router,
     listings_router,

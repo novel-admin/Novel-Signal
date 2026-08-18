@@ -1,0 +1,11 @@
+export type ListResponse<T> = { items: T[]; total: number; limit: number; offset: number };
+export type KeywordOption = { id: string; keyword_text: string; archived_at: string | null };
+export type Capture = { id: string; keyword_id: string; marketplace: "amazon_in"; geo_code: string; device_profile: "desktop" | "mobile"; captured_at: string; page_count: number; result_count: number; source_job_id: string | null; parser_version: string | null };
+export type SerpResult = { id: string; absolute_position: number; within_type_position: number; page_number: number; marketplace_product_id: string; product_id: string | null; competitor_product_id: string | null; brand: string | null; placement_type: string; badges: string[]; displayed_price: string | null; rating: string | null; review_count: number | null };
+export type CaptureDetail = Capture & { results: SerpResult[] };
+export type RankObservation = { capture_id: string; captured_at: string; absolute_position: number; organic_rank: number | null; placement_type: string; page_number: number; displayed_price: string | null; rating: string | null; review_count: number | null };
+export type RankHistory = { keyword_id: string; identity: string; observations: RankObservation[] };
+export type Visibility = { keyword_id: string; identity: string; latest_rank: number | null; best_rank: number | null; latest_organic_rank: number | null; observation_count: number; rank_volatility: number; time_in_top_3_percent: number; time_in_top_10_percent: number };
+export type BrandPresence = { total_page_1_results: number; brands: { brand: string; page_1_slot_count: number; page_1_share_percent: number; organic_slots: number; sponsored_slots: number }[] };
+export type BadgeEvent = { id: string; keyword_id: string; marketplace_product_id: string; brand: string | null; badge_type: string; event_type: "acquired" | "lost"; observed_at: string };
+export type NewEntrant = { id: string; keyword_id: string; marketplace_product_id: string; brand: string | null; first_seen_at: string; rank: number; geo_code: string; device_profile: string };
