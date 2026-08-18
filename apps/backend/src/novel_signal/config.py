@@ -24,6 +24,11 @@ class Settings(BaseSettings):
     amazon_in_max_delay_seconds: int = 15
     collector_timeout_seconds: int = 45
     collector_max_attempts: int = 3
+    collector_failure_rate_warn_threshold: float = 0.05
+    collector_freshness_warn_minutes: int = 60
+    collector_completeness_warn_ratio: float = 0.98
+    raw_evidence_retention_days: int = 90
+    collection_health_window_hours: int = 24
     amazon_lwa_client_id: str = ""
     amazon_lwa_client_secret: SecretStr = SecretStr("")
     amazon_lwa_refresh_token: SecretStr = SecretStr("")
