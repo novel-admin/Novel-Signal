@@ -166,3 +166,96 @@ button { color: inherit; }
 .bulk-bar { background: #121d1a; color: var(--accent); }
 .pagination { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 18px; border-top: 1px solid var(--line); color: var(--muted); font-size: 13px; }
 .pagination > div { display: flex; gap: 8px; }
+
+/* S12 Collection */
+.collection-panel {
+  margin-top: 32px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  overflow: hidden;
+}
+
+.collection-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 20px;
+  padding: 16px 18px;
+  border-bottom: 1px solid var(--line);
+}
+
+.collection-actions > div:first-child {
+  display: grid;
+  gap: 4px;
+}
+
+.collection-actions span,
+.metric-card span,
+.readiness-item span {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.collection-metrics,
+.readiness-grid,
+.retention-view {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  padding: 18px;
+}
+
+.metric-card,
+.readiness-item {
+  padding: 15px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  display: grid;
+  gap: 7px;
+}
+
+.metric-card strong {
+  font-size: 20px;
+}
+
+.health-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+  padding: 0 18px 18px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.collection-tabs {
+  padding: 0 18px;
+  border-top: 1px solid var(--line);
+}
+
+.success-banner {
+  padding: 12px 18px;
+  border-bottom: 1px solid var(--line);
+}
+
+.mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+}
+
+.retention-view {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+@media (max-width: 800px) {
+  .collection-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .collection-metrics,
+  .readiness-grid,
+  .retention-view {
+    grid-template-columns: 1fr;
+  }
+}
