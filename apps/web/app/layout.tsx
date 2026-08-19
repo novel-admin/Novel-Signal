@@ -8,7 +8,7 @@ export const metadata: Metadata = {
 };
 
 const links = [
-  ["Universe", "/universe"], ["Keywords", "/keywords"], ["Rank & Visibility", "/rank-visibility"], ["Listing Intelligence", "/listing-intelligence"], ["Price Monitoring", "/price-monitoring"], ["Products", "/products"],
+  ["Universe", "/universe"], ["Keywords", "/keywords"], ["Collection", "/collection"], ["Rank & Visibility", "/rank-visibility"], ["Listing Intelligence", "/listing-intelligence"], ["Price Monitoring", "/price-monitoring"], ["Products", "/products"],
   ["Sources", "/sources"], ["Changes", "/changes"], ["Actions", "/actions"], ["Operations", "/operations"],
 ] as const;
 
