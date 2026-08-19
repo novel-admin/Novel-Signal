@@ -10,8 +10,6 @@ from novel_signal.modules.listings import models as listing_models  # noqa: F401
 from novel_signal.modules.price_monitoring import models as price_monitoring_models  # noqa: F401
 from novel_signal.modules.rank_visibility import models as rank_visibility_models  # noqa: F401
 from novel_signal.modules.universe import models as universe_models  # noqa: F401
-from novel_signal.modules.keywords import models as keyword_models  # noqa: F401
-from novel_signal.modules.collection import models as collection_models  # noqa: F401
 from sqlalchemy import engine_from_config, pool
 
 config = context.config
