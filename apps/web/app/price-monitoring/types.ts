@@ -1,0 +1,10 @@
+export type List<T>={items:T[];total:number;limit:number;offset:number};
+export type ProductOption={id:string;name:string;marketplace_product_id?:string|null};
+export type Availability="available"|"unavailable"|"unknown"|"limited"|"out_of_stock";
+export type Offer={id:string;observation_id:string;seller_name:string;seller_id:string|null;offer_price:string|null;list_price:string|null;shipping_amount:string|null;coupon_text:string|null;coupon_value:string|null;effective_price:string|null;availability_status:Availability;fulfillment_type:string|null;is_featured_offer:boolean|null;prime_eligible:boolean|null};
+export type Observation={id:string;marketplace:string;marketplace_product_id:string;product_id:string|null;competitor_product_id:string|null;observed_at:string;geo_code:string|null;currency:string;availability_status:Availability;primary_price:string|null;list_price:string|null;discount_percent:string|null;coupon_text:string|null;coupon_value:string|null;shipping_amount:string|null;effective_price:string|null;primary_seller_name:string|null;seller_count:number|null;offers:Offer[]};
+export type HistoryRow={id:string;observed_at:string;primary_price:string|null;mrp:string|null;effective_price:string|null;discount_percent:string|null;coupon_text:string|null;shipping_amount:string|null;availability_status:Availability;seller_count:number|null;primary_seller_name:string|null;geo_code:string|null;currency:string};
+export type Event={id:string;marketplace_product_id:string;event_type:string;previous_price:string|null;new_price:string|null;absolute_change:string|null;percent_change:string|null;geo_code:string|null;currency:string;observed_at:string};
+export type Freshness={observed_at:string;age_minutes:number;freshness_status:"fresh"|"stale"|"unknown"};
+export type Side={primary_price:string|null;effective_price:string|null;mrp:string|null;discount_percent:string|null;seller_count:number|null;availability_status:Availability;freshness:Freshness};
+export type Comparison={owned:Side;competitor:Side;deltas:Record<string,string|number|null>;signals:string[]};
