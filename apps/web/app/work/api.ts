@@ -26,4 +26,5 @@ export function transitionAction(id: string, status: Action["status"], note?: st
 
 export type OperationsModule = { module: string; owner: string; status: string };
 export const loadOperations = () => request<OperationsModule>("/collection/meta");
-
+export const loadJobs = () => request<Array<{ id: string; page_type: string; target_id: string; status: string; attempts: number; scheduled_at: string; failure_reason: string | null }>>("/collection/jobs");
+export const loadCaptures = () => request<Array<{ id: string; page_type: string; target_id: string; status: string; captured_at: string; failure_reason: string | null }>>("/collection/captures");
