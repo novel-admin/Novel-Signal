@@ -498,6 +498,29 @@ class BattleCardItemList(ReadModel):
     offset: int
 
 
+class CollectionReadinessCounts(ReadModel):
+    products_checked: int
+    competitor_products_checked: int
+    battle_cards_checked: int
+    battle_card_mappings_checked: int
+
+
+class CollectionReadinessIssue(ReadModel):
+    entity_type: str
+    entity_id: uuid.UUID
+    entity_name: str | None = None
+    code: str
+    message: str
+    field: str | None = None
+
+
+class CollectionReadinessReport(ReadModel):
+    ready: bool
+    counts: CollectionReadinessCounts
+    issue_count: int
+    issues: list[CollectionReadinessIssue]
+
+
 class CsvImportRequest(BaseModel):
     csv_text: str = Field(min_length=1, description="UTF-8 CSV content including header row")
 
