@@ -190,7 +190,7 @@ class AmazonSpApiClient:
 
     async def _marketplace_participations(self, access_token: str) -> httpx.Response:
         url = f"{self.config.api_base_url.rstrip('/')}{_MARKETPLACE_PARTICIPATIONS_PATH}"
-        signed_headers = self._signed_headers(url, access_token)
+        signed_headers = self.signed_headers("GET", url, access_token)
         try:
             response = await self._client.get(url, headers=signed_headers)
         except httpx.TimeoutException as exc:
@@ -210,9 +210,15 @@ class AmazonSpApiClient:
             )
         return response
 
-    def _signed_headers(self, url: str, access_token: str) -> dict[str, str]:
+    async def get_access_token(self) -> str:
+        """Return a cached LWA token for a separately scoped SP-API request."""
+        self.config.validate()
+        return await self._lwa_access_token()
+
+    def signed_headers(self, method: str, url: str, access_token: str) -> dict[str, str]:
+        """Create SigV4 headers without sending a request or retaining credentials."""
         request = AWSRequest(
-            method="GET",
+            method=method,
             url=url,
             headers={"x-amz-access-token": access_token},
         )
