@@ -409,3 +409,182 @@ def test_openapi_contains_examples_and_all_item_routes(client: TestClient) -> No
         "BattleCardItemCreate",
     ):
         assert "example" in schema["components"]["schemas"][model]
+
+
+def test_collection_readiness_reports_ready_owned_product(client: TestClient) -> None:
+    create_product(client, product_url="https://www.amazon.in/dp/B000000001")
+
+    response = client.get(f"{BASE}/readiness")
+
+    assert response.status_code == 200, response.text
+    assert response.json() == {
+        "ready": True,
+        "counts": {
+            "products_checked": 1,
+            "competitor_products_checked": 0,
+            "battle_cards_checked": 0,
+            "battle_card_mappings_checked": 0,
+        },
+        "issue_count": 0,
+        "issues": [],
+    }
+
+
+def test_collection_readiness_reports_owned_product_missing_identity(client: TestClient) -> None:
+    product = create_product(
+        client,
+        marketplace_product_id=None,
+        product_url="https://www.amazon.in/dp/B000000001",
+    )
+
+    response = client.get(f"{BASE}/readiness")
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["ready"] is False
+    assert body["issue_count"] == 1
+    assert body["issues"] == [
+        {
+            "entity_type": "product",
+            "entity_id": product["id"],
+            "entity_name": product["name"],
+            "code": "marketplace_product_id_missing",
+            "message": "Marketplace product ID is required for collection.",
+            "field": "marketplace_product_id",
+        }
+    ]
+
+
+def test_collection_readiness_reports_competitor_product_missing_identity(
+    client: TestClient,
+) -> None:
+    competitor = create_competitor(client)
+    competitor_product = create_competitor_product(
+        client,
+        competitor["id"],
+        marketplace_product_id=None,
+        product_url="https://www.amazon.in/dp/B000000002",
+    )
+
+    response = client.get(f"{BASE}/readiness")
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["ready"] is False
+    assert body["issue_count"] == 1
+    assert body["issues"][0]["entity_type"] == "competitor_product"
+    assert body["issues"][0]["entity_id"] == competitor_product["id"]
+    assert body["issues"][0]["code"] == "marketplace_product_id_missing"
+    assert body["issues"][0]["field"] == "marketplace_product_id"
+
+
+def test_collection_readiness_reports_battle_card_without_usable_competitor_mapping(
+    client: TestClient,
+) -> None:
+    competitor = create_competitor(client)
+    product = create_product(client, product_url="https://www.amazon.in/dp/B000000001")
+    competitor_product = create_competitor_product(
+        client,
+        competitor["id"],
+        product_url="https://www.amazon.in/dp/B000000002",
+    )
+    battle_card = create_battle_card(
+        client,
+        product["id"],
+        items=[{"competitor_product_id": competitor_product["id"]}],
+    )
+    archive = client.post(f"{BASE}/competitor-products/{competitor_product['id']}/archive")
+    assert archive.status_code == 200
+
+    response = client.get(f"{BASE}/readiness")
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["counts"] == {
+        "products_checked": 1,
+        "competitor_products_checked": 0,
+        "battle_cards_checked": 1,
+        "battle_card_mappings_checked": 1,
+    }
+    assert {
+        (issue["entity_type"], issue["entity_id"], issue["code"])
+        for issue in body["issues"]
+    } == {
+        ("battle_card", battle_card["id"], "battle_card_no_usable_competitor_mappings"),
+        (
+            "battle_card_item",
+            next(item["id"] for item in battle_card["items"]),
+            "battle_card_mapping_competitor_product_not_ready",
+        ),
+    }
+
+
+def test_collection_readiness_excludes_archived_owned_products_and_flags_inactive_competitors(
+    client: TestClient,
+) -> None:
+    archived_product = create_product(
+        client,
+        product_url="https://www.amazon.in/dp/B000000001",
+    )
+    assert client.post(f"{BASE}/products/{archived_product['id']}/archive").status_code == 200
+
+    competitor = create_competitor(client)
+    competitor_product = create_competitor_product(
+        client,
+        competitor["id"],
+        product_url="https://www.amazon.in/dp/B000000002",
+    )
+    assert client.post(f"{BASE}/competitors/{competitor['id']}/archive").status_code == 200
+
+    response = client.get(f"{BASE}/readiness")
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["counts"]["products_checked"] == 0
+    assert body["counts"]["competitor_products_checked"] == 1
+    assert body["issues"] == [
+        {
+            "entity_type": "competitor_product",
+            "entity_id": competitor_product["id"],
+            "entity_name": competitor_product["name"],
+            "code": "competitor_archived",
+            "message": "Competitor product is linked to an archived competitor.",
+            "field": "competitor_id",
+        }
+    ]
+
+
+def test_collection_readiness_response_totals_and_issue_order_are_deterministic(
+    client: TestClient,
+) -> None:
+    ready_product = create_product(
+        client,
+        internal_sku="OWN-READY",
+        marketplace_product_id="B000000009",
+        product_url="https://www.amazon.in/dp/B000000009",
+    )
+    missing_identity_product = create_product(
+        client,
+        internal_sku="OWN-MISSING",
+        marketplace_product_id=None,
+        product_url="https://www.amazon.in/dp/B000000008",
+    )
+    battle_card = create_battle_card(client, ready_product["id"])
+
+    first = client.get(f"{BASE}/readiness")
+    second = client.get(f"{BASE}/readiness")
+
+    assert first.status_code == second.status_code == 200
+    assert first.json() == second.json()
+    assert first.json()["counts"] == {
+        "products_checked": 2,
+        "competitor_products_checked": 0,
+        "battle_cards_checked": 1,
+        "battle_card_mappings_checked": 0,
+    }
+    assert [issue["code"] for issue in first.json()["issues"]] == [
+        "battle_card_no_usable_competitor_mappings",
+        "marketplace_product_id_missing",
+    ]
+    assert first.json()["issues"][1]["entity_id"] == missing_identity_product["id"]
+    assert first.json()["issues"][0]["entity_id"] == battle_card["id"]

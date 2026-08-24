@@ -31,6 +31,7 @@ from novel_signal.modules.universe.schemas import (
     BattleCardList,
     BattleCardRead,
     BattleCardUpdate,
+    CollectionReadinessReport,
     CompetitorCreate,
     CompetitorList,
     CompetitorProductCreate,
@@ -90,6 +91,11 @@ def execute[ResultT](operation: Callable[[], ResultT]) -> ResultT:
 @router.get("/meta")
 def module_meta() -> dict[str, str]:
     return {"module": "S1 Universe", "status": "implemented"}
+
+
+@router.get("/readiness", response_model=CollectionReadinessReport)
+def collection_readiness(service: ServiceDependency) -> CollectionReadinessReport:
+    return service.collection_readiness()
 
 
 @router.get("/csv/{entity}/template", response_class=Response)

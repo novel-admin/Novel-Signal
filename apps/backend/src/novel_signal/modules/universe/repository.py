@@ -255,6 +255,39 @@ class UniverseRepository:
             .where(BattleCardItem.id == entity_id)
         )
 
+    def get_collection_readiness_entities(
+        self,
+    ) -> tuple[list[Product], list[CompetitorProduct], list[BattleCard]]:
+        products = list(
+            self.session.scalars(
+                select(Product)
+                .where(Product.archived_at.is_(None))
+                .order_by(Product.name, Product.id)
+            )
+        )
+        competitor_products = list(
+            self.session.scalars(
+                select(CompetitorProduct)
+                .options(selectinload(CompetitorProduct.competitor))
+                .where(CompetitorProduct.archived_at.is_(None))
+                .order_by(CompetitorProduct.name, CompetitorProduct.id)
+            )
+        )
+        battle_cards = list(
+            self.session.scalars(
+                select(BattleCard)
+                .options(
+                    selectinload(BattleCard.product),
+                    selectinload(BattleCard.items)
+                    .selectinload(BattleCardItem.competitor_product)
+                    .selectinload(CompetitorProduct.competitor),
+                )
+                .where(BattleCard.archived_at.is_(None))
+                .order_by(BattleCard.name, BattleCard.id)
+            )
+        )
+        return products, competitor_products, battle_cards
+
     def active_competitor_name_exists(
         self, name: str, *, exclude_id: uuid.UUID | None = None
     ) -> bool:

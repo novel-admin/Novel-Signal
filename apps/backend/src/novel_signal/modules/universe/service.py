@@ -30,6 +30,9 @@ from novel_signal.modules.universe.schemas import (
     BattleCardItemUpdate,
     BattleCardItemWrite,
     BattleCardUpdate,
+    CollectionReadinessCounts,
+    CollectionReadinessIssue,
+    CollectionReadinessReport,
     CompetitorCreate,
     CompetitorProductCreate,
     CompetitorProductUpdate,
@@ -288,6 +291,50 @@ class UniverseService:
     def get_battle_card_item(self, entity_id: uuid.UUID) -> BattleCardItem:
         return self._require_battle_card_item(entity_id)
 
+    def collection_readiness(self) -> CollectionReadinessReport:
+        products, competitor_products, battle_cards = (
+            self.repository.get_collection_readiness_entities()
+        )
+        issues: list[CollectionReadinessIssue] = []
+
+        for product in products:
+            issues.extend(self._product_readiness_issues(product))
+        for competitor_product in competitor_products:
+            issues.extend(self._competitor_product_readiness_issues(competitor_product))
+
+        active_mapping_count = 0
+        for battle_card in battle_cards:
+            active_items = sorted(
+                (item for item in battle_card.items if item.archived_at is None),
+                key=lambda item: (
+                    item.priority_order is None,
+                    item.priority_order or 0,
+                    str(item.id),
+                ),
+            )
+            active_mapping_count += len(active_items)
+            issues.extend(self._battle_card_readiness_issues(battle_card, active_items))
+
+        issues.sort(
+            key=lambda issue: (
+                issue.entity_type,
+                issue.entity_name or "",
+                str(issue.entity_id),
+                issue.code,
+            )
+        )
+        return CollectionReadinessReport(
+            ready=not issues,
+            counts=CollectionReadinessCounts(
+                products_checked=len(products),
+                competitor_products_checked=len(competitor_products),
+                battle_cards_checked=len(battle_cards),
+                battle_card_mappings_checked=active_mapping_count,
+            ),
+            issue_count=len(issues),
+            issues=issues,
+        )
+
     def create_battle_card_item(self, payload: BattleCardItemCreate) -> BattleCardItem:
         self._require_active_battle_card(payload.battle_card_id)
         self._require_active_competitor_product(payload.competitor_product_id)
@@ -350,6 +397,227 @@ class UniverseService:
             if product_id not in requested_ids and current.archived_at is None:
                 current.archived_at = datetime.now(UTC)
         self.repository.flush()
+
+    def _product_readiness_issues(self, product: Product) -> list[CollectionReadinessIssue]:
+        return self._identity_readiness_issues(
+            entity_type="product",
+            entity_id=product.id,
+            entity_name=product.name,
+            marketplace=product.marketplace,
+            marketplace_product_id=product.marketplace_product_id,
+            brand=product.brand,
+            category=product.category,
+            pack_quantity=product.pack_quantity,
+            pack_unit=product.pack_unit,
+            tracking_tier=product.tracking_tier,
+            product_url=product.product_url,
+        )
+
+    def _competitor_product_readiness_issues(
+        self, competitor_product: CompetitorProduct
+    ) -> list[CollectionReadinessIssue]:
+        if competitor_product.archived_at is not None:
+            return [
+                self._readiness_issue(
+                    entity_type="competitor_product",
+                    entity_id=competitor_product.id,
+                    entity_name=competitor_product.name,
+                    code="competitor_product_archived",
+                    message="Competitor product is archived and cannot be collected.",
+                    field="archived_at",
+                )
+            ]
+        issues = self._identity_readiness_issues(
+            entity_type="competitor_product",
+            entity_id=competitor_product.id,
+            entity_name=competitor_product.name,
+            marketplace=competitor_product.marketplace,
+            marketplace_product_id=competitor_product.marketplace_product_id,
+            brand=competitor_product.brand,
+            category=competitor_product.category,
+            pack_quantity=competitor_product.pack_quantity,
+            pack_unit=competitor_product.pack_unit,
+            tracking_tier=competitor_product.tracking_tier,
+            product_url=competitor_product.product_url,
+        )
+        if competitor_product.competitor is None:
+            issues.append(
+                self._readiness_issue(
+                    entity_type="competitor_product",
+                    entity_id=competitor_product.id,
+                    entity_name=competitor_product.name,
+                    code="competitor_relationship_missing",
+                    message="Competitor product has no usable competitor relationship.",
+                    field="competitor_id",
+                )
+            )
+        elif competitor_product.competitor.archived_at is not None:
+            issues.append(
+                self._readiness_issue(
+                    entity_type="competitor_product",
+                    entity_id=competitor_product.id,
+                    entity_name=competitor_product.name,
+                    code="competitor_archived",
+                    message="Competitor product is linked to an archived competitor.",
+                    field="competitor_id",
+                )
+            )
+        return issues
+
+    def _battle_card_readiness_issues(
+        self, battle_card: BattleCard, active_items: list[BattleCardItem]
+    ) -> list[CollectionReadinessIssue]:
+        issues: list[CollectionReadinessIssue] = []
+        if battle_card.product.archived_at is not None:
+            issues.append(
+                self._readiness_issue(
+                    entity_type="battle_card",
+                    entity_id=battle_card.id,
+                    entity_name=battle_card.name,
+                    code="battle_card_product_archived",
+                    message="Battle card is linked to an archived owned product.",
+                    field="product_id",
+                )
+            )
+        if not active_items:
+            issues.append(
+                self._readiness_issue(
+                    entity_type="battle_card",
+                    entity_id=battle_card.id,
+                    entity_name=battle_card.name,
+                    code="battle_card_no_usable_competitor_mappings",
+                    message="Battle card has no active competitor product mappings.",
+                    field="items",
+                )
+            )
+            return issues
+
+        usable_mapping_count = 0
+        for item in active_items:
+            competitor_product = item.competitor_product
+            mapping_issues = self._competitor_product_readiness_issues(competitor_product)
+            if not mapping_issues:
+                usable_mapping_count += 1
+                continue
+            issues.append(
+                self._readiness_issue(
+                    entity_type="battle_card_item",
+                    entity_id=item.id,
+                    entity_name=competitor_product.name,
+                    code="battle_card_mapping_competitor_product_not_ready",
+                    message="Battle card mapping points to a competitor product that is not ready.",
+                    field="competitor_product_id",
+                )
+            )
+        if usable_mapping_count == 0:
+            issues.append(
+                self._readiness_issue(
+                    entity_type="battle_card",
+                    entity_id=battle_card.id,
+                    entity_name=battle_card.name,
+                    code="battle_card_no_usable_competitor_mappings",
+                    message="Battle card has no collection-ready competitor product mappings.",
+                    field="items",
+                )
+            )
+        return issues
+
+    def _identity_readiness_issues(
+        self,
+        *,
+        entity_type: str,
+        entity_id: uuid.UUID,
+        entity_name: str,
+        marketplace: Marketplace | None,
+        marketplace_product_id: str | None,
+        brand: str | None,
+        category: str | None,
+        pack_quantity: int | None,
+        pack_unit: str | None,
+        tracking_tier: TrackingTier | None,
+        product_url: str | None,
+    ) -> list[CollectionReadinessIssue]:
+        issues: list[CollectionReadinessIssue] = []
+        values = (
+            (marketplace, "marketplace", "marketplace_missing", "Marketplace is required."),
+            (
+                marketplace_product_id,
+                "marketplace_product_id",
+                "marketplace_product_id_missing",
+                "Marketplace product ID is required for collection.",
+            ),
+            (brand, "brand", "brand_missing", "Brand is required for collection."),
+            (category, "category", "category_missing", "Category is required for collection."),
+            (
+                pack_quantity,
+                "pack_quantity",
+                "pack_quantity_missing",
+                "Pack quantity is required for collection.",
+            ),
+            (pack_unit, "pack_unit", "pack_unit_missing", "Pack unit is required for collection."),
+            (
+                tracking_tier,
+                "tracking_tier",
+                "tracking_tier_missing",
+                "Tracking tier is required for collection scheduling.",
+            ),
+            (
+                product_url,
+                "product_url",
+                "product_url_missing",
+                "Product URL is required for collection.",
+            ),
+        )
+        for value, field, code, message in values:
+            if self._is_missing_readiness_value(value):
+                issues.append(
+                    self._readiness_issue(
+                        entity_type=entity_type,
+                        entity_id=entity_id,
+                        entity_name=entity_name,
+                        code=code,
+                        message=message,
+                        field=field,
+                    )
+                )
+        if marketplace is not None and marketplace_product_id is not None:
+            try:
+                validate_marketplace_product_id(marketplace, marketplace_product_id)
+            except ValueError:
+                issues.append(
+                    self._readiness_issue(
+                        entity_type=entity_type,
+                        entity_id=entity_id,
+                        entity_name=entity_name,
+                        code="marketplace_product_id_invalid",
+                        message="Marketplace product ID is invalid for the configured marketplace.",
+                        field="marketplace_product_id",
+                    )
+                )
+        return issues
+
+    @staticmethod
+    def _is_missing_readiness_value(value: object | None) -> bool:
+        return value is None or isinstance(value, str) and not value.strip()
+
+    @staticmethod
+    def _readiness_issue(
+        *,
+        entity_type: str,
+        entity_id: uuid.UUID,
+        entity_name: str | None,
+        code: str,
+        message: str,
+        field: str | None,
+    ) -> CollectionReadinessIssue:
+        return CollectionReadinessIssue(
+            entity_type=entity_type,
+            entity_id=entity_id,
+            entity_name=entity_name,
+            code=code,
+            message=message,
+            field=field,
+        )
 
     def _require_competitor(self, entity_id: uuid.UUID) -> Competitor:
         entity = self.repository.get_competitor(entity_id)
