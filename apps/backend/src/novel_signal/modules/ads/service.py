@@ -1,7 +1,18 @@
+import hashlib
+from datetime import date
+
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from .models import AdObservation, AdPresenceDaily, OwnAdPerformance, SpendEstimate
+from novel_signal.parsers.amazon_ads import parse_report
+
+from .models import (
+    AdObservation,
+    AdPresenceDaily,
+    AmazonAdsSearchTermContribution,
+    OwnAdPerformance,
+    SpendEstimate,
+)
 from .schemas import (
     AdObservationCreate,
     OwnPerformanceCreate,
@@ -112,3 +123,65 @@ def record_own_performance(session: Session, data: OwnPerformanceCreate) -> OwnA
     session.commit()
     session.refresh(item)
     return item
+
+
+def ingest_search_term_report(
+    session: Session,
+    *,
+    body: bytes,
+    profile_id: str,
+    report_id: str,
+    period_start: date,
+    period_end: date,
+    currency: str,
+    raw_capture_id: str,
+    parse_run_id: str,
+) -> list[AmazonAdsSearchTermContribution]:
+    stored: list[AmazonAdsSearchTermContribution] = []
+    for row in parse_report(body):
+        identity = "|".join(
+            (
+                profile_id,
+                report_id,
+                str(row["campaignId"]),
+                str(row.get("adGroupId", "")),
+                str(row["searchTerm"]).strip().lower(),
+                period_start.isoformat(),
+                period_end.isoformat(),
+            )
+        )
+        fingerprint = hashlib.sha256(identity.encode()).hexdigest()
+        existing = session.scalar(
+            select(AmazonAdsSearchTermContribution).where(
+                AmazonAdsSearchTermContribution.fingerprint == fingerprint
+            )
+        )
+        if existing:
+            stored.append(existing)
+            continue
+        contribution = AmazonAdsSearchTermContribution(
+            profile_id=profile_id,
+            campaign_id=str(row["campaignId"]),
+            ad_group_id=str(row["adGroupId"]) if row.get("adGroupId") is not None else None,
+            search_term=str(row["searchTerm"]),
+            matched_keyword=str(row["keyword"]) if row.get("keyword") is not None else None,
+            match_type=str(row["matchType"]) if row.get("matchType") is not None else None,
+            period_start=period_start,
+            period_end=period_end,
+            impressions=int(row.get("impressions", 0)),
+            clicks=int(row.get("clicks", 0)),
+            spend=float(row.get("cost", row.get("spend", 0))),
+            currency=currency,
+            orders=int(row.get("purchases7d", row.get("orders", 0))),
+            sales=float(row.get("sales7d", row.get("sales", 0))),
+            raw_capture_id=raw_capture_id,
+            parse_run_id=parse_run_id,
+            report_id=report_id,
+            fingerprint=fingerprint,
+        )
+        session.add(contribution)
+        stored.append(contribution)
+    session.commit()
+    for item in stored:
+        session.refresh(item)
+    return stored

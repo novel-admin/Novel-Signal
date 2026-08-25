@@ -12,7 +12,12 @@ from novel_signal.sources.amazon.ads_api import AmazonAdsConfig
 from novel_signal.sources.meta.ad_library import MetaAdLibraryConfig
 from novel_signal.sources.meta.marketing_api import MetaMarketingConfig
 
-from .repository import list_estimates, list_observations, list_presence
+from .repository import (
+    list_estimates,
+    list_observations,
+    list_presence,
+    list_search_term_contributions,
+)
 from .schemas import (
     AdObservationCreate,
     AdObservationRead,
@@ -21,6 +26,7 @@ from .schemas import (
     OwnPerformanceRead,
     PresenceDerive,
     PresenceUpsert,
+    SearchTermContributionRead,
     SpendEstimateCreate,
     SpendEstimateRead,
 )
@@ -147,3 +153,15 @@ def post_own_performance(
     body: OwnPerformanceCreate, db: Session = Depends(get_db)
 ) -> OwnPerformanceRead:
     return OwnPerformanceRead.model_validate(record_own_performance(db, body))
+
+
+@router.get("/search-term-contributions", response_model=list[SearchTermContributionRead])
+def get_search_term_contributions(
+    profile_id: str | None = None,
+    limit: int = Query(default=100, ge=1, le=500),
+    db: Session = Depends(get_db),
+) -> list[SearchTermContributionRead]:
+    return [
+        SearchTermContributionRead.model_validate(row)
+        for row in list_search_term_contributions(db, profile_id=profile_id, limit=limit)
+    ]

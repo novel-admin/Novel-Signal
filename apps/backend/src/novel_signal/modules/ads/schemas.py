@@ -101,3 +101,27 @@ class SpendEstimateRead(SpendEstimateCreate):
 class OwnPerformanceRead(OwnPerformanceCreate):
     model_config = ConfigDict(from_attributes=True)
     id: str
+
+
+class SearchTermContributionRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: str
+    profile_id: str
+    campaign_id: str
+    ad_group_id: str | None
+    search_term: str
+    matched_keyword: str | None
+    match_type: str | None
+    period_start: date
+    period_end: date
+    impressions: int
+    clicks: int
+    spend: float
+    currency: str
+    orders: int
+    sales: float
+    raw_capture_id: str
+    parse_run_id: str
+    report_id: str
+    confidence: str
+    fingerprint: str
