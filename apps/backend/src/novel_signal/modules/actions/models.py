@@ -4,7 +4,17 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import JSON, DateTime, ForeignKey, Index, String, Text, UniqueConstraint, func
+from sqlalchemy import (
+    JSON,
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Index,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from novel_signal.db import Base
@@ -39,21 +49,31 @@ class ChangeEvent(Base):
 
 class Action(Base):
     __tablename__ = "actions"
-    __table_args__ = (Index("ix_actions_status_created_at", "status", "created_at"),)
+    __table_args__ = (
+        CheckConstraint(
+            "change_event_id IS NOT NULL OR gap_id IS NOT NULL", name="action_origin_required"
+        ),
+        Index("ix_actions_status_created_at", "status", "created_at"),
+        Index("ix_actions_gap_status", "gap_id", "status"),
+    )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
-    change_event_id: Mapped[str] = mapped_column(ForeignKey("change_events.id"), nullable=False)
+    change_event_id: Mapped[str | None] = mapped_column(
+        ForeignKey("change_events.id"), nullable=True
+    )
+    gap_id: Mapped[str | None] = mapped_column(ForeignKey("gaps.id"), nullable=True)
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     reason: Mapped[str | None] = mapped_column(Text)
     owner_user_id: Mapped[str | None] = mapped_column(String(120))
     due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="open")
     outcome_note: Mapped[str | None] = mapped_column(Text)
+    playbook_entry: Mapped[str | None] = mapped_column(String(120))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
     closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    change_event: Mapped[ChangeEvent] = relationship(back_populates="actions")
+    change_event: Mapped[ChangeEvent | None] = relationship(back_populates="actions")
     history: Mapped[list[ActionStatusHistory]] = relationship(
         back_populates="action",
         cascade="all, delete-orphan",

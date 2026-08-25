@@ -1,7 +1,9 @@
 from datetime import date, datetime
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+from novel_signal.modules.evidence import require_published_lineage
 
 
 class AdObservationCreate(BaseModel):
@@ -21,6 +23,16 @@ class AdObservationCreate(BaseModel):
     fingerprint: str
     publication_status: str = "published"
     quarantine_reason: str | None = None
+
+    @model_validator(mode="after")
+    def published_evidence_is_complete(self) -> "AdObservationCreate":
+        require_published_lineage(
+            self.publication_status,
+            self.raw_capture_id,
+            self.parse_run_id,
+            self.quarantine_reason,
+        )
+        return self
 
 
 class PresenceUpsert(BaseModel):

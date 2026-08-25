@@ -5,7 +5,9 @@ from .models import ScorecardCell, ScorecardHistory
 from .schemas import ScorecardUpsert
 
 
-def score_band(score: float) -> str:
+def score_band(score: float | None) -> str:
+    if score is None:
+        return "unknown"
     if score >= 85:
         return "leading"
     if score >= 65:
@@ -37,6 +39,9 @@ def upsert_scorecard(session: Session, data: ScorecardUpsert) -> ScorecardCell:
             revenue_at_stake=data.revenue_at_stake,
             confidence=data.confidence,
             evidence=data.evidence,
+            unknown_reason=data.unknown_reason,
+            formula_version=data.formula_version,
+            freshness_state=data.freshness_state,
         )
         session.add(cell)
         session.flush()
@@ -57,6 +62,9 @@ def upsert_scorecard(session: Session, data: ScorecardUpsert) -> ScorecardCell:
         cell.revenue_at_stake = data.revenue_at_stake
         cell.confidence = data.confidence
         cell.evidence = data.evidence
+        cell.unknown_reason = data.unknown_reason
+        cell.formula_version = data.formula_version
+        cell.freshness_state = data.freshness_state
     session.commit()
     session.refresh(cell)
     return cell

@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 Status = Literal["open", "in_progress", "done", "dismissed"]
 Severity = Literal["info", "warning", "critical"]
@@ -30,21 +30,31 @@ class ChangeEventRead(ChangeEventCreate):
 
 
 class ActionCreate(BaseModel):
-    change_event_id: str
+    change_event_id: str | None = None
+    gap_id: str | None = None
     title: str = Field(min_length=1, max_length=255)
     reason: str | None = None
     owner_user_id: str | None = None
     due_at: datetime | None = None
+    playbook_entry: str | None = None
+
+    @model_validator(mode="after")
+    def origin_is_present(self) -> "ActionCreate":
+        if not self.change_event_id and not self.gap_id:
+            raise ValueError("change_event_id or gap_id is required")
+        return self
 
 
 class ActionRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: str
-    change_event_id: str
+    change_event_id: str | None
+    gap_id: str | None
     title: str
     reason: str | None
     owner_user_id: str | None
     due_at: datetime | None
+    playbook_entry: str | None
     status: Status
     outcome_note: str | None
     created_at: datetime

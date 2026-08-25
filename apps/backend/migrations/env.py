@@ -4,11 +4,16 @@ from alembic import context
 from novel_signal.config import get_settings
 from novel_signal.db import Base
 from novel_signal.modules.actions import models as action_models  # noqa: F401
+from novel_signal.modules.ads import models as ads_models  # noqa: F401
+from novel_signal.modules.alerts import models as alert_models  # noqa: F401
 from novel_signal.modules.collection import models as collection_models  # noqa: F401
 from novel_signal.modules.keywords import models as keyword_models  # noqa: F401
 from novel_signal.modules.listings import models as listing_models  # noqa: F401
+from novel_signal.modules.market_share import models as market_share_models  # noqa: F401
 from novel_signal.modules.price_monitoring import models as price_monitoring_models  # noqa: F401
 from novel_signal.modules.rank_visibility import models as rank_visibility_models  # noqa: F401
+from novel_signal.modules.reviews import models as review_models  # noqa: F401
+from novel_signal.modules.scorecards import models as scorecard_models  # noqa: F401
 from novel_signal.modules.universe import models as universe_models  # noqa: F401
 from sqlalchemy import engine_from_config, pool
 

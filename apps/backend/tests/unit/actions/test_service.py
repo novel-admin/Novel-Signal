@@ -1,5 +1,7 @@
+from datetime import UTC, datetime, timedelta
+
 from novel_signal.db import Base
-from novel_signal.modules.actions.models import Action, ActionStatusHistory, ChangeEvent
+from novel_signal.modules.actions.models import Action, ActionStatusHistory, ChangeEvent, Gap
 from novel_signal.modules.actions.schemas import ActionCreate, ActionTransition, ChangeEventCreate
 from novel_signal.modules.actions.service import (
     ActionsError,
@@ -14,7 +16,13 @@ from sqlalchemy.orm import Session
 def session() -> Session:
     engine = create_engine("sqlite://")
     Base.metadata.create_all(
-        engine, tables=[ChangeEvent.__table__, Action.__table__, ActionStatusHistory.__table__]
+        engine,
+        tables=[
+            ChangeEvent.__table__,
+            Gap.__table__,
+            Action.__table__,
+            ActionStatusHistory.__table__,
+        ],
     )
     return Session(engine)
 
@@ -36,7 +44,15 @@ def test_change_fingerprint_is_idempotent() -> None:
 def test_action_transition_requires_outcome_note_and_records_history() -> None:
     db = session()
     event = create_change(db, event_data())
-    action = create_action(db, ActionCreate(change_event_id=event.id, title="Review price"))
+    action = create_action(
+        db,
+        ActionCreate(
+            change_event_id=event.id,
+            title="Review price",
+            owner_user_id="palguna",
+            due_at=datetime.now(UTC) + timedelta(days=2),
+        ),
+    )
     assert db.query(ActionStatusHistory).count() == 1
     action = transition_action(db, action, ActionTransition(status="in_progress"))
     try:
@@ -63,3 +79,15 @@ def test_invalid_transition_is_rejected() -> None:
         assert "cannot transition" in str(error)
     else:
         raise AssertionError("open actions cannot jump directly to done")
+
+
+def test_active_action_requires_owner_and_due_date() -> None:
+    db = session()
+    event = create_change(db, event_data())
+    action = create_action(db, ActionCreate(change_event_id=event.id, title="Review price"))
+    try:
+        transition_action(db, action, ActionTransition(status="in_progress"))
+    except ActionsError as error:
+        assert "owner and due date" in str(error)
+    else:
+        raise AssertionError("unassigned actions cannot become active")

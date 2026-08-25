@@ -78,6 +78,12 @@ def topic_summary(
             func.avg(ReviewObservation.rating),
         )
         .join(ReviewObservation, ReviewObservation.id == ReviewTopic.review_id)
+        .where(
+            ReviewObservation.publication_status == "published",
+            ReviewObservation.raw_capture_id.is_not(None),
+            ReviewObservation.parse_run_id.is_not(None),
+            ReviewObservation.quarantine_reason.is_(None),
+        )
         .group_by(ReviewTopic.topic, ReviewTopic.topic_type)
         .order_by(ReviewTopic.topic)
     )
@@ -106,7 +112,13 @@ def trends(
     session: Session, target_id: str | None, start: date | None, end: date | None
 ) -> list[ReviewTopicTrend]:
     # Materialize deterministic weekly aggregates; repeated requests update the same unique rows.
-    query = select(ReviewObservation).where(ReviewObservation.published_on.is_not(None))
+    query = select(ReviewObservation).where(
+        ReviewObservation.published_on.is_not(None),
+        ReviewObservation.publication_status == "published",
+        ReviewObservation.raw_capture_id.is_not(None),
+        ReviewObservation.parse_run_id.is_not(None),
+        ReviewObservation.quarantine_reason.is_(None),
+    )
     if target_id:
         query = query.where(ReviewObservation.target_id == target_id)
     if start:

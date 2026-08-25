@@ -87,6 +87,20 @@ def create_action_from_change(
         raise _expected_error(error) from error
 
 
+@router.post(
+    "/gaps/{gap_id}/actions", response_model=ActionRead, status_code=status.HTTP_201_CREATED
+)
+def create_action_from_gap(
+    gap_id: str, data: ActionCreate, session: Session = Depends(get_db)
+) -> ActionRead:
+    if data.gap_id != gap_id:
+        raise HTTPException(status_code=422, detail="gap_id must match the path")
+    try:
+        return ActionRead.model_validate(service.create_action(session, data))
+    except service.ActionsError as error:
+        raise _expected_error(error) from error
+
+
 @router.post("/actions", response_model=ActionRead, status_code=status.HTTP_201_CREATED)
 def create_action(data: ActionCreate, session: Session = Depends(get_db)) -> ActionRead:
     try:

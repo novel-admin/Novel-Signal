@@ -61,8 +61,19 @@ def create_change(session: Session, data: ChangeEventCreate) -> ChangeEvent:
 
 
 def create_action(session: Session, data: ActionCreate) -> Action:
-    if not session.get(ChangeEvent, data.change_event_id):
+    if data.change_event_id and not session.get(ChangeEvent, data.change_event_id):
         raise ActionsError("change event not found")
+    if data.gap_id and not session.get(Gap, data.gap_id):
+        raise ActionsError("gap not found")
+    if data.gap_id:
+        existing = session.scalar(
+            select(Action).where(
+                Action.gap_id == data.gap_id,
+                Action.status.in_(("open", "in_progress")),
+            )
+        )
+        if existing:
+            return existing
     action = Action(**data.model_dump())
     session.add(action)
     session.flush()
@@ -77,6 +88,8 @@ def transition_action(session: Session, action: Action, data: ActionTransition) 
         raise ActionsError("action is already in that status")
     if data.status not in ALLOWED_TRANSITIONS.get(action.status, set()):
         raise ActionsError(f"cannot transition action from {action.status} to {data.status}")
+    if data.status == "in_progress" and (not action.owner_user_id or not action.due_at):
+        raise ActionsError("owner and due date are required before an action becomes active")
     if data.status == "done" and not data.note:
         raise ActionsError("an outcome note is required when completing an action")
     now = datetime.now(UTC)
