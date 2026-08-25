@@ -22,6 +22,9 @@ from .schemas import (
     AdObservationCreate,
     AdObservationRead,
     AdPresenceRead,
+    AdSummaryRead,
+    DaypartDerive,
+    DaypartRead,
     OwnPerformanceCreate,
     OwnPerformanceRead,
     PresenceDerive,
@@ -32,9 +35,11 @@ from .schemas import (
 )
 from .service import (
     create_spend_estimate,
+    derive_dayparts,
     derive_presence,
     record_observation,
     record_own_performance,
+    summarize_ads,
     upsert_presence,
 )
 
@@ -113,6 +118,16 @@ def put_presence(body: PresenceUpsert, db: Session = Depends(get_db)) -> AdPrese
 @router.post("/presence/derive", response_model=AdPresenceRead)
 def post_derived_presence(body: PresenceDerive, db: Session = Depends(get_db)) -> AdPresenceRead:
     return AdPresenceRead.model_validate(derive_presence(db, body))
+
+
+@router.post("/dayparts/derive", response_model=list[DaypartRead])
+def post_derived_dayparts(body: DaypartDerive, db: Session = Depends(get_db)) -> list[DaypartRead]:
+    return [DaypartRead.model_validate(row) for row in derive_dayparts(db, body)]
+
+
+@router.get("/summary/{competitor_id}", response_model=AdSummaryRead)
+def get_summary(competitor_id: str, db: Session = Depends(get_db)) -> AdSummaryRead:
+    return summarize_ads(db, competitor_id)
 
 
 @router.get("/presence/daily", response_model=list[AdPresenceRead])

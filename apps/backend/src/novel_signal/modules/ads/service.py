@@ -14,6 +14,7 @@ from novel_signal.parsers.amazon_ads import parse_report
 from novel_signal.sources.base import RawSourcePage
 
 from .models import (
+    AdDaypartProfile,
     AdObservation,
     AdPresenceDaily,
     AmazonAdsSearchTermContribution,
@@ -22,6 +23,8 @@ from .models import (
 )
 from .schemas import (
     AdObservationCreate,
+    AdSummaryRead,
+    DaypartDerive,
     OwnPerformanceCreate,
     PresenceDerive,
     PresenceUpsert,
@@ -112,6 +115,83 @@ def continuous_ad_days(rows: list[AdPresenceDaily]) -> int:
             break
         streak += 1
     return streak
+
+
+def derive_dayparts(session: Session, data: DaypartDerive) -> list[AdDaypartProfile]:
+    groups: dict[tuple[int, int], list[str]] = {}
+    for slot in data.successful_captures:
+        groups.setdefault((slot.weekday, slot.hour), []).append(slot.capture_id)
+    observations = list(
+        session.scalars(
+            select(AdObservation).where(
+                AdObservation.competitor_id == data.competitor_id,
+                AdObservation.keyword_id == data.keyword_id,
+                AdObservation.publication_status == "published",
+                AdObservation.quarantine_reason.is_(None),
+            )
+        )
+    )
+    observed = {row.capture_id for row in observations if row.capture_id}
+    results: list[AdDaypartProfile] = []
+    for (weekday, hour), capture_ids in groups.items():
+        item = session.scalar(
+            select(AdDaypartProfile).where(
+                AdDaypartProfile.competitor_id == data.competitor_id,
+                AdDaypartProfile.keyword_id == data.keyword_id,
+                AdDaypartProfile.weekday == weekday,
+                AdDaypartProfile.hour == hour,
+            )
+        )
+        values = {
+            "presence_rate": len(observed.intersection(capture_ids)) / len(capture_ids),
+            "sample_size": len(capture_ids),
+            "status": "derived",
+        }
+        if item:
+            for key, value in values.items():
+                setattr(item, key, value)
+        else:
+            item = AdDaypartProfile(
+                competitor_id=data.competitor_id,
+                keyword_id=data.keyword_id,
+                weekday=weekday,
+                hour=hour,
+                **values,
+            )
+            session.add(item)
+        results.append(item)
+    session.commit()
+    for item in results:
+        session.refresh(item)
+    return results
+
+
+def summarize_ads(session: Session, competitor_id: str) -> AdSummaryRead:
+    presence = list(
+        session.scalars(
+            select(AdPresenceDaily).where(AdPresenceDaily.competitor_id == competitor_id)
+        )
+    )
+    observations = list(
+        session.scalars(
+            select(AdObservation).where(
+                AdObservation.competitor_id == competitor_id,
+                AdObservation.publication_status == "published",
+                AdObservation.quarantine_reason.is_(None),
+            )
+        )
+    )
+    positions = [row.sponsored_position for row in observations if row.sponsored_position]
+    coverages = [row.coverage for row in presence if row.coverage is not None]
+    return AdSummaryRead(
+        competitor_id=competitor_id,
+        continuous_ad_days=continuous_ad_days(presence),
+        total_ad_days=len({row.day for row in presence if row.ad_days > 0}),
+        keyword_breadth=len({row.keyword_id for row in presence if row.ad_days > 0}),
+        average_slot_share=round(sum(coverages) / len(coverages), 3) if coverages else None,
+        average_sponsored_position=round(sum(positions) / len(positions), 2) if positions else None,
+        sample_size=len(observations),
+    )
 
 
 def create_spend_estimate(session: Session, data: SpendEstimateCreate) -> SpendEstimate:

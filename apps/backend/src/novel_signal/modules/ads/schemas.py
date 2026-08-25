@@ -52,6 +52,40 @@ class PresenceDerive(BaseModel):
     successful_capture_ids: list[str] = Field(min_length=1)
 
 
+class CaptureSlot(BaseModel):
+    capture_id: str
+    hour: int = Field(ge=0, le=23)
+    weekday: int = Field(ge=0, le=6)
+
+
+class DaypartDerive(BaseModel):
+    competitor_id: str
+    keyword_id: str
+    successful_captures: list[CaptureSlot] = Field(min_length=1)
+
+
+class DaypartRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: str
+    competitor_id: str
+    keyword_id: str
+    hour: int
+    weekday: int
+    presence_rate: float
+    sample_size: int
+    status: str
+
+
+class AdSummaryRead(BaseModel):
+    competitor_id: str
+    continuous_ad_days: int
+    total_ad_days: int
+    keyword_breadth: int
+    average_slot_share: float | None
+    average_sponsored_position: float | None
+    sample_size: int
+
+
 class SpendEstimateCreate(BaseModel):
     competitor_id: str
     keyword_id: str | None = None
