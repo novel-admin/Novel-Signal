@@ -160,27 +160,40 @@ async def test_sp_api_empty_marketplace_response_denies_access() -> None:
 
 @pytest.mark.asyncio
 async def test_sp_api_fetches_catalog_raw_bytes_with_deterministic_fingerprint() -> None:
-    raw_body = b'{"payload":{"asin":"B012345678"}}'
+    first_body = b'{"payload":{"asin":"B012345678","version":1}}'
+    second_body = b'{"payload":{"asin":"B012345678","version":2}}'
+    different_request_body = b'{"payload":{"asin":"B098765432"}}'
+    bodies = iter((first_body, second_body, different_request_body))
     requests: list[httpx.Request] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
         requests.append(request)
         if request.url.host == "lwa.test":
             return token_response()
-        return httpx.Response(200, content=raw_body, headers={"content-type": "application/json"})
+        return httpx.Response(
+            200,
+            content=next(bodies),
+            headers={"content-type": "application/json"},
+        )
 
     request = sync_request("catalog_items", {"asin": "B012345678"})
     async with AmazonSpApiClient(config(), transport=httpx.MockTransport(handler)) as client:
         first = await client.fetch(request)
         second = await client.fetch(request)
+        different_request = await client.fetch(
+            sync_request("catalog_items", {"asin": "B098765432"})
+        )
 
     assert len(first) == 1
     assert first[0].source.value == "amazon_sp_api"
     assert first[0].resource_type == "catalog_items"
-    assert first[0].body == raw_body
+    assert first[0].body == first_body
+    assert second[0].body == second_body
+    assert different_request[0].body == different_request_body
     assert first[0].content_type == "application/json"
     assert first[0].next_cursor is None
     assert first[0].request_fingerprint == second[0].request_fingerprint
+    assert first[0].request_fingerprint != different_request[0].request_fingerprint
     assert requests[1].url.path == "/catalog/2022-04-01/items/B012345678"
     assert requests[1].url.params["marketplaceIds"] == "A21TJRUUN4KGV"
 

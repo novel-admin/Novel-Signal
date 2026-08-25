@@ -180,7 +180,7 @@ class AmazonSpApiClient:
                     resource_type=request.resource_type,
                     body=body,
                     content_type=response.headers.get("content-type", "application/json"),
-                    request_fingerprint=self._fingerprint(request.resource_type, request_url, body),
+                    request_fingerprint=self._fingerprint(request.resource_type, request_url),
                     next_cursor=next_cursor,
                 )
             )
@@ -354,13 +354,11 @@ class AmazonSpApiClient:
         return {"seller_sku": cursor["seller_sku"], "next_token": next_token}
 
     @staticmethod
-    def _fingerprint(resource_type: str, request_url: str, body: bytes) -> str:
+    def _fingerprint(resource_type: str, request_url: str) -> str:
         digest = hashlib.sha256()
         digest.update(resource_type.encode())
         digest.update(b"\0")
         digest.update(request_url.encode())
-        digest.update(b"\0")
-        digest.update(body)
         return digest.hexdigest()
 
     @staticmethod
