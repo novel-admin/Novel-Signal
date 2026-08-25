@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
+from urllib.parse import quote
 
 import httpx
 import urllib3
@@ -20,6 +22,9 @@ from novel_signal.sources.base import RawSourcePage, SourceType, SyncRequest
 SOURCE_TYPE = SourceType.GOOGLE_SEARCH_CONSOLE
 _GSC_READONLY_SCOPE = "https://www.googleapis.com/auth/webmasters.readonly"
 _SITES_URL = "https://searchconsole.googleapis.com/webmasters/v3/sites"
+_SEARCH_ANALYTICS_RESOURCE = "search_analytics"
+_SEARCH_ANALYTICS_DIMENSIONS = ("query", "page", "country", "device", "date")
+_SEARCH_ANALYTICS_ROW_LIMIT = 25_000
 
 
 class GoogleSearchConsoleError(RuntimeError):
@@ -65,6 +70,10 @@ class GoogleSearchConsoleNetworkError(GoogleSearchConsoleError):
 
 class GoogleSearchConsoleUnsupportedOperationError(GoogleSearchConsoleError):
     """Collection is intentionally outside this verification-only slice."""
+
+
+class GoogleSearchConsoleCursorError(GoogleSearchConsoleError):
+    """The raw Search Analytics request cursor is missing or malformed."""
 
 
 CredentialFactory = Callable[[dict[str, Any]], Any]
@@ -126,7 +135,8 @@ class GoogleSearchConsoleConfig:
 
 def _service_account_credentials(info: dict[str, Any]) -> Any:
     return service_account.Credentials.from_service_account_info(
-        info, scopes=(_GSC_READONLY_SCOPE,)  # type: ignore[no-untyped-call]
+        info,
+        scopes=(_GSC_READONLY_SCOPE,),  # type: ignore[no-untyped-call]
     )
 
 
@@ -187,11 +197,135 @@ class GoogleSearchConsoleClient:
         self._validate_sites_response(response)
 
     async def fetch(self, request: SyncRequest) -> tuple[RawSourcePage, ...]:
-        """Keep the source contract explicit until query ingestion is implemented."""
-        del request
-        raise GoogleSearchConsoleUnsupportedOperationError(
-            "Google Search Console collection is not implemented in this verification slice."
+        """Fetch raw Search Analytics pages without parsing or publishing rows."""
+        cursor = self._parse_search_cursor(request)
+        await self.verify_connection()
+        credential_info = self.config.validate()
+        access_token = await self._access_token(credential_info)
+        pages: list[RawSourcePage] = []
+        while True:
+            payload = self._search_payload(request, cursor)
+            body, content_type = await self._search_analytics(cursor["site"], access_token, payload)
+            next_cursor = self._next_search_cursor(cursor, body)
+            pages.append(
+                RawSourcePage(
+                    source=SOURCE_TYPE,
+                    resource_type=request.resource_type,
+                    body=body,
+                    content_type=content_type,
+                    request_fingerprint=self._fingerprint(
+                        request.resource_type, payload, cursor["site"]
+                    ),
+                    next_cursor=next_cursor,
+                )
+            )
+            if next_cursor is None:
+                return tuple(pages)
+            cursor = next_cursor
+
+    def _parse_search_cursor(self, request: SyncRequest) -> dict[str, Any]:
+        if request.resource_type != _SEARCH_ANALYTICS_RESOURCE or not isinstance(
+            request.cursor, dict
+        ):
+            raise GoogleSearchConsoleCursorError("Unsupported Google Search Console raw request.")
+        site = request.cursor.get("site")
+        if not isinstance(site, str) or not site.strip():
+            raise GoogleSearchConsoleCursorError(
+                "Search Analytics cursor requires a configured site."
+            )
+        if site not in self.config.sites:
+            raise GoogleSearchConsolePropertyUnavailableError(
+                "Requested Google Search Console property is not configured."
+            )
+        dimensions = request.cursor.get("dimensions", list(_SEARCH_ANALYTICS_DIMENSIONS))
+        if (
+            not isinstance(dimensions, list)
+            or not dimensions
+            or any(dimension not in _SEARCH_ANALYTICS_DIMENSIONS for dimension in dimensions)
+            or len(set(dimensions)) != len(dimensions)
+        ):
+            raise GoogleSearchConsoleCursorError(
+                "Search Analytics cursor contains invalid dimensions."
+            )
+        start_row = request.cursor.get("start_row", 0)
+        if not isinstance(start_row, int) or start_row < 0:
+            raise GoogleSearchConsoleCursorError(
+                "Search Analytics start_row must be a non-negative integer."
+            )
+        return {"site": site, "dimensions": tuple(dimensions), "start_row": start_row}
+
+    def _search_payload(self, request: SyncRequest, cursor: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "startDate": request.window_start.date().isoformat(),
+            "endDate": request.window_end.date().isoformat(),
+            "dimensions": list(cursor["dimensions"]),
+            "startRow": cursor["start_row"],
+            "rowLimit": _SEARCH_ANALYTICS_ROW_LIMIT,
+        }
+
+    async def _search_analytics(
+        self, site: str, access_token: str, payload: dict[str, Any]
+    ) -> tuple[bytes, str]:
+        base_url = self.config.sites_url.rstrip("/").rsplit("/sites", 1)[0]
+        url = f"{base_url}/sites/{quote(site, safe='')}/searchAnalytics/query"
+        try:
+            response = await self._client.post(
+                url, headers={"Authorization": f"Bearer {access_token}"}, json=payload
+            )
+        except httpx.TimeoutException as exc:
+            raise GoogleSearchConsoleNetworkError(
+                "Google Search Analytics request timed out."
+            ) from exc
+        except httpx.RequestError as exc:
+            raise GoogleSearchConsoleNetworkError(
+                "Google Search Analytics request failed."
+            ) from exc
+        if response.status_code == 401:
+            raise GoogleSearchConsoleAuthenticationError(
+                "Google Search Console authentication was rejected."
+            )
+        if response.status_code == 403:
+            raise GoogleSearchConsolePermissionError("Google Search Console access was denied.")
+        if response.status_code == 429:
+            raise GoogleSearchConsoleRateLimitError(response.headers.get("Retry-After"))
+        if response.is_error:
+            raise GoogleSearchConsoleError(
+                f"Google Search Analytics request failed with status {response.status_code}."
+            )
+        return response.content, response.headers.get("content-type", "application/json")
+
+    def _next_search_cursor(self, cursor: dict[str, Any], body: bytes) -> dict[str, Any] | None:
+        if not body:
+            return None
+        try:
+            payload = json.loads(body)
+        except json.JSONDecodeError as exc:
+            raise GoogleSearchConsoleMalformedResponseError(
+                "Google Search Analytics response was not valid JSON."
+            ) from exc
+        if not isinstance(payload, dict):
+            raise GoogleSearchConsoleMalformedResponseError(
+                "Google Search Analytics response was not a JSON object."
+            )
+        rows = payload.get("rows", [])
+        if not isinstance(rows, list):
+            raise GoogleSearchConsoleMalformedResponseError(
+                "Google Search Analytics response did not contain a rows list."
+            )
+        if len(rows) < _SEARCH_ANALYTICS_ROW_LIMIT:
+            return None
+        return {
+            "site": cursor["site"],
+            "dimensions": cursor["dimensions"],
+            "start_row": cursor["start_row"] + _SEARCH_ANALYTICS_ROW_LIMIT,
+        }
+
+    @staticmethod
+    def _fingerprint(resource_type: str, payload: dict[str, Any], site: str) -> str:
+        logical_request = json.dumps(
+            {"site": site, "payload": payload}, sort_keys=True, separators=(",", ":")
         )
+        return hashlib.sha256(f"{resource_type}\0{logical_request}".encode()).hexdigest()
 
     async def _access_token(self, credential_info: dict[str, Any]) -> str:
         try:

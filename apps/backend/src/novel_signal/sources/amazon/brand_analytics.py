@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
+import gzip
+import hashlib
+import json
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -14,7 +18,9 @@ from novel_signal.sources.base import RawSourcePage, SourceType, SyncRequest
 
 SOURCE_TYPE = SourceType.AMAZON_BRAND_ANALYTICS
 _REPORTS_PATH = "/reports/2021-06-30/reports"
+_REPORT_DOCUMENTS_PATH = "/reports/2021-06-30/documents"
 _SEARCH_QUERY_PERFORMANCE_REPORT = "GET_BRAND_ANALYTICS_SEARCH_QUERY_PERFORMANCE_REPORT"
+_RAW_REPORT_RESOURCE = "brand_analytics_search_query_performance"
 
 
 class BrandAnalyticsError(RuntimeError):
@@ -54,12 +60,30 @@ class BrandAnalyticsUnsupportedOperationError(BrandAnalyticsError):
     """Collection is intentionally outside this verification-only slice."""
 
 
+class BrandAnalyticsReportFailedError(BrandAnalyticsError):
+    """Amazon terminated the requested report before it was available."""
+
+
+class BrandAnalyticsPollingExhaustedError(BrandAnalyticsError):
+    """Amazon did not complete the report within the configured polling bound."""
+
+
+class BrandAnalyticsCursorError(BrandAnalyticsError):
+    """The raw-report request does not identify a supported logical report window."""
+
+
+class BrandAnalyticsCompressionError(BrandAnalyticsError):
+    """The report document advertised unsupported or invalid compression."""
+
+
 @dataclass(frozen=True)
 class BrandAnalyticsConfig:
     """The existing SP-API configuration plus a permitted verification report type."""
 
     sp_api: AmazonSpApiConfig
     report_type: str = _SEARCH_QUERY_PERFORMANCE_REPORT
+    poll_max_attempts: int = 5
+    poll_interval_seconds: float = 0.0
 
     @classmethod
     def from_settings(cls, settings: Settings | None = None) -> BrandAnalyticsConfig:
@@ -132,11 +156,140 @@ class BrandAnalyticsClient:
         self._validate_report_response(response)
 
     async def fetch(self, request: SyncRequest) -> tuple[RawSourcePage, ...]:
-        """Keep the source contract explicit until report ingestion is implemented."""
-        del request
-        raise BrandAnalyticsUnsupportedOperationError(
-            "Amazon Brand Analytics collection is not implemented in this verification slice."
+        """Return one downloaded Brand Analytics document as an immutable raw page."""
+        payload = self._fetch_payload(request)
+        await self._sp_api.verify_connection()
+        report = await self._sp_request("POST", _REPORTS_PATH, payload)
+        report_id = self._required_string(report, "reportId", "report creation response")
+        status = await self._poll_report(report_id)
+        document_id = self._required_string(status, "reportDocumentId", "report status response")
+        document = await self._sp_request("GET", f"{_REPORT_DOCUMENTS_PATH}/{document_id}")
+        download_url = self._required_string(document, "url", "report document metadata")
+        body, content_type = await self._download(
+            download_url, document.get("compressionAlgorithm")
         )
+        return (
+            RawSourcePage(
+                source=SOURCE_TYPE,
+                resource_type=request.resource_type,
+                body=body,
+                content_type=content_type,
+                request_fingerprint=self._fingerprint(request.resource_type, payload),
+            ),
+        )
+
+    def _fetch_payload(self, request: SyncRequest) -> dict[str, Any]:
+        if request.resource_type != _RAW_REPORT_RESOURCE or not isinstance(request.cursor, dict):
+            raise BrandAnalyticsCursorError("Unsupported Brand Analytics raw-report request.")
+        start = request.cursor.get("data_start_time")
+        end = request.cursor.get("data_end_time")
+        if not all(isinstance(value, str) and value.strip() for value in (start, end)):
+            raise BrandAnalyticsCursorError(
+                "Brand Analytics cursor requires data_start_time and data_end_time."
+            )
+        return {
+            "reportType": self.config.report_type,
+            "marketplaceIds": [self.config.sp_api.marketplace_id],
+            "dataStartTime": start,
+            "dataEndTime": end,
+        }
+
+    async def _poll_report(self, report_id: str) -> dict[str, Any]:
+        for attempt in range(self.config.poll_max_attempts):
+            status = await self._sp_request("GET", f"{_REPORTS_PATH}/{report_id}")
+            processing_status = self._required_string(
+                status, "processingStatus", "report status response"
+            )
+            if processing_status == "DONE":
+                return status
+            if processing_status in {"CANCELLED", "FATAL"}:
+                raise BrandAnalyticsReportFailedError(
+                    f"Amazon Brand Analytics report ended with {processing_status}."
+                )
+            if attempt < self.config.poll_max_attempts - 1 and self.config.poll_interval_seconds:
+                await asyncio.sleep(self.config.poll_interval_seconds)
+        raise BrandAnalyticsPollingExhaustedError(
+            "Amazon Brand Analytics report polling was exhausted."
+        )
+
+    async def _sp_request(
+        self, method: str, path: str, payload: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
+        token = await self._sp_api.get_access_token()
+        url = f"{self.config.sp_api.api_base_url.rstrip('/')}{path}"
+        try:
+            response = await self._client.request(
+                method, url, headers=self._sp_api.signed_headers(method, url, token), json=payload
+            )
+        except httpx.TimeoutException as exc:
+            raise BrandAnalyticsNetworkError("Amazon Brand Analytics request timed out.") from exc
+        except httpx.RequestError as exc:
+            raise BrandAnalyticsNetworkError("Amazon Brand Analytics request failed.") from exc
+        if response.status_code == 401:
+            raise BrandAnalyticsAuthenticationError(
+                "Amazon Brand Analytics authentication was rejected."
+            )
+        if response.status_code == 403:
+            raise BrandAnalyticsPermissionError("Amazon Brand Analytics report access was denied.")
+        if response.status_code == 429:
+            raise BrandAnalyticsRateLimitError(response.headers.get("Retry-After"))
+        if response.is_error:
+            raise BrandAnalyticsError(
+                f"Amazon Brand Analytics request failed with status {response.status_code}."
+            )
+        return self._json_object(response, "Amazon Brand Analytics response")
+
+    async def _download(self, url: str, compression_algorithm: Any) -> tuple[bytes, str]:
+        try:
+            response = await self._client.get(url)
+        except httpx.TimeoutException as exc:
+            raise BrandAnalyticsNetworkError("Amazon report-document download timed out.") from exc
+        except httpx.RequestError as exc:
+            raise BrandAnalyticsNetworkError("Amazon report-document download failed.") from exc
+        if response.is_error:
+            raise BrandAnalyticsError(
+                f"Amazon report-document download failed with status {response.status_code}."
+            )
+        if compression_algorithm is None:
+            return response.content, response.headers.get(
+                "content-type", "application/octet-stream"
+            )
+        if compression_algorithm != "GZIP":
+            raise BrandAnalyticsCompressionError(
+                "Amazon Brand Analytics report document uses unsupported compression."
+            )
+        try:
+            return gzip.decompress(response.content), response.headers.get(
+                "content-type", "application/octet-stream"
+            )
+        except OSError as exc:
+            raise BrandAnalyticsCompressionError(
+                "Amazon Brand Analytics report document contained invalid GZIP data."
+            ) from exc
+
+    @staticmethod
+    def _fingerprint(resource_type: str, payload: dict[str, Any]) -> str:
+        encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+        return hashlib.sha256(f"{resource_type}\0{encoded}".encode()).hexdigest()
+
+    @staticmethod
+    def _required_string(payload: dict[str, Any], field: str, context: str) -> str:
+        value = payload.get(field)
+        if not isinstance(value, str) or not value.strip():
+            raise BrandAnalyticsMalformedResponseError(
+                f"Amazon Brand Analytics {context} did not contain {field}."
+            )
+        return value
+
+    @staticmethod
+    def _json_object(response: httpx.Response, context: str) -> dict[str, Any]:
+        try:
+            payload = response.json()
+        except ValueError as exc:
+            raise BrandAnalyticsMalformedResponseError(f"{context} was not valid JSON.") from exc
+        if not isinstance(payload, dict):
+            raise BrandAnalyticsMalformedResponseError(f"{context} was not a JSON object.")
+        return payload
 
     def _request_payload(self) -> dict[str, Any]:
         end = datetime.now(UTC).replace(microsecond=0)
