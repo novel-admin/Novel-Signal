@@ -1,10 +1,17 @@
 import hashlib
+import uuid
 from datetime import date
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from novel_signal.modules.collection.source_ingestion import (
+    ensure_parser_version,
+    persist_raw_source_page,
+)
+from novel_signal.modules.collection.storage import RawObjectStore
 from novel_signal.parsers.amazon_ads import parse_report
+from novel_signal.sources.base import RawSourcePage
 
 from .models import (
     AdObservation,
@@ -185,3 +192,43 @@ def ingest_search_term_report(
     for item in stored:
         session.refresh(item)
     return stored
+
+
+def ingest_stored_search_term_report(
+    session: Session,
+    *,
+    object_store: RawObjectStore,
+    job_id: uuid.UUID,
+    attempt_id: uuid.UUID,
+    page: RawSourcePage,
+    profile_id: str,
+    report_id: str,
+    period_start: date,
+    period_end: date,
+    currency: str,
+) -> list[AmazonAdsSearchTermContribution]:
+    evidence = persist_raw_source_page(
+        session,
+        object_store=object_store,
+        job_id=job_id,
+        attempt_id=attempt_id,
+        platform="amazon_ads_api",
+        page=page,
+    )
+    parser = ensure_parser_version(
+        session,
+        platform="amazon_ads_api",
+        page_type=page.resource_type,
+        version="amazon-ads-search-term-v1",
+    )
+    return ingest_search_term_report(
+        session,
+        body=page.body,
+        profile_id=profile_id,
+        report_id=report_id,
+        period_start=period_start,
+        period_end=period_end,
+        currency=currency,
+        raw_capture_id=str(evidence.id),
+        parse_run_id=str(parser.id),
+    )
