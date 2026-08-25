@@ -15,6 +15,7 @@ Branch: `feat/palguna-intelligence-delivery`
 - Amazon Ads report bodies are stored as S12 raw evidence before versioned parsing.
 - Search-term contributions retain measured metrics, report identity, raw evidence, and parser lineage.
 - Competitor sponsored presence uses successful captures as its denominator.
+- Ad summaries expose continuous days, total days, keyword breadth, slot share, position, and daypart profiles.
 - Review metrics expose count, average rating, velocity, trajectory, sample size, and confidence.
 - Market-share models refuse small, low-coverage, or lineage-free inputs.
 - Overview, ads, reviews, market-share, scorecard, and alert routes are API-backed.
@@ -23,7 +24,7 @@ Branch: `feat/palguna-intelligence-delivery`
 
 - Ruff passed.
 - Strict mypy passed across 124 backend source files.
-- Local backend suite: 151 passed and 6 PostgreSQL tests skipped.
+- Local backend suite: 152 passed and 6 PostgreSQL tests skipped.
 - Frontend: 14 tests passed.
 - Frontend typecheck passed.
 - Frontend production build passed.
