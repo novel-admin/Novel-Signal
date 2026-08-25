@@ -45,6 +45,13 @@ class PresenceUpsert(BaseModel):
     evidence_ref: str | None = None
 
 
+class PresenceDerive(BaseModel):
+    competitor_id: str
+    keyword_id: str
+    day: date
+    successful_capture_ids: list[str] = Field(min_length=1)
+
+
 class SpendEstimateCreate(BaseModel):
     competitor_id: str
     keyword_id: str | None = None

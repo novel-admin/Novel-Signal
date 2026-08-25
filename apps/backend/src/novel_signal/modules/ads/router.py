@@ -19,12 +19,14 @@ from .schemas import (
     AdPresenceRead,
     OwnPerformanceCreate,
     OwnPerformanceRead,
+    PresenceDerive,
     PresenceUpsert,
     SpendEstimateCreate,
     SpendEstimateRead,
 )
 from .service import (
     create_spend_estimate,
+    derive_presence,
     record_observation,
     record_own_performance,
     upsert_presence,
@@ -100,6 +102,11 @@ def get_observations(
 @router.put("/presence/daily", response_model=AdPresenceRead, status_code=200)
 def put_presence(body: PresenceUpsert, db: Session = Depends(get_db)) -> AdPresenceRead:
     return AdPresenceRead.model_validate(upsert_presence(db, body))
+
+
+@router.post("/presence/derive", response_model=AdPresenceRead)
+def post_derived_presence(body: PresenceDerive, db: Session = Depends(get_db)) -> AdPresenceRead:
+    return AdPresenceRead.model_validate(derive_presence(db, body))
 
 
 @router.get("/presence/daily", response_model=list[AdPresenceRead])
