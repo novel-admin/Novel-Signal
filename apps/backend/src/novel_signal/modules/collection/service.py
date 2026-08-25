@@ -227,6 +227,7 @@ class CollectionLifecycleService:
 
         attempt_number = job.attempt_count + 1
         attempt = CollectionAttempt(
+            id=uuid.uuid4(),
             job=job,
             attempt_number=attempt_number,
             status=CollectionAttemptStatus.RUNNING,
@@ -242,6 +243,7 @@ class CollectionLifecycleService:
 
         item = CollectionWorkItem(
             job_id=job.id,
+            attempt_id=attempt.id,
             job_type=job.job_type,
             platform=job.platform,
             keyword_id=job.keyword_id,
