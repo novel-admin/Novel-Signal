@@ -1,7 +1,9 @@
 import json
+from datetime import UTC, datetime
 
 import httpx
 import pytest
+from novel_signal.sources.base import SyncRequest
 from novel_signal.sources.google.search_console import (
     GoogleSearchConsoleAuthenticationError,
     GoogleSearchConsoleClient,
@@ -187,3 +189,48 @@ async def test_gsc_malformed_and_empty_responses_are_typed() -> None:
 def assert_no_secrets(message: str) -> None:
     for secret in ("private-key-value", "private-key-id", "gsc-access-token"):
         assert secret not in message
+
+
+def raw_request(start_row: int = 0) -> SyncRequest:
+    return SyncRequest(
+        "search_analytics",
+        datetime(2026, 8, 1, tzinfo=UTC),
+        datetime(2026, 8, 2, tzinfo=UTC),
+        {
+            "site": "sc-domain:noveltissues.com",
+            "dimensions": ["query", "page"],
+            "start_row": start_row,
+        },
+    )
+
+
+@pytest.mark.asyncio
+async def test_gsc_fetches_raw_search_analytics_page_and_keeps_body_exact() -> None:
+    raw = b'{"rows":[{"keys":["wipes"]}]}'
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "GET":
+            return httpx.Response(
+                200, json={"siteEntry": [{"siteUrl": "sc-domain:noveltissues.com"}]}
+            )
+        return httpx.Response(200, content=raw, headers={"content-type": "application/json"})
+
+    async with client(config(), httpx.MockTransport(handler)) as source:
+        first = await source.fetch(raw_request())
+        second = await source.fetch(raw_request())
+        different = await source.fetch(raw_request(1))
+    assert first[0].body == raw and first[0].source.value == "google_search_console"
+    assert first[0].request_fingerprint == second[0].request_fingerprint
+    assert first[0].request_fingerprint != different[0].request_fingerprint
+
+
+def test_gsc_pagination_accepts_no_data_and_remains_deterministic() -> None:
+    source = GoogleSearchConsoleClient(config())
+    cursor = {"site": "sc-domain:noveltissues.com", "dimensions": ("query",), "start_row": 0}
+    assert source._next_search_cursor(cursor, b"{}") is None
+    assert source._next_search_cursor(cursor, b'{"rows": []}') is None
+    assert source._next_search_cursor(cursor, b'{"rows": [{"keys": []}]}') is None
+    with pytest.raises(GoogleSearchConsoleMalformedResponseError):
+        source._next_search_cursor(cursor, b'{"rows": {}}')
+    full_rows = json.dumps({"rows": [{}] * 25_000}).encode()
+    assert source._next_search_cursor(cursor, full_rows)["start_row"] == 25_000
