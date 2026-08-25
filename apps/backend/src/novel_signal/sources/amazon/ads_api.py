@@ -6,6 +6,7 @@ returned :class:`RawSourcePage` before handing it to a normalizer.
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
@@ -29,6 +30,14 @@ class AmazonAdsPermissionError(AmazonAdsError):
 
 class AmazonAdsRateLimitError(AmazonAdsError):
     """Amazon asked the caller to slow down."""
+
+
+class AmazonAdsReportError(AmazonAdsError):
+    """Amazon could not produce a requested report."""
+
+
+class AmazonAdsReportTimeoutError(AmazonAdsReportError):
+    """Amazon did not finish a report inside the bounded poll window."""
 
 
 @dataclass(frozen=True)
@@ -97,15 +106,28 @@ class AmazonAdsClient:
         self._access_token = token
         return token
 
-    async def _get(self, path: str, *, params: dict[str, Any] | None = None) -> httpx.Response:
+    async def _request(
+        self,
+        method: str,
+        path: str,
+        *,
+        profile_id: str | None = None,
+        params: dict[str, Any] | None = None,
+        json: dict[str, Any] | None = None,
+    ) -> httpx.Response:
         token = await self._token()
-        response = await self._client.get(
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Amazon-Advertising-API-ClientId": self.config.client_id,
+        }
+        if profile_id:
+            headers["Amazon-Advertising-API-Scope"] = profile_id
+        response = await self._client.request(
+            method,
             f"{self.config.api_base_url.rstrip('/')}/{path.lstrip('/')}",
-            headers={
-                "Authorization": f"Bearer {token}",
-                "Amazon-Advertising-API-ClientId": self.config.client_id,
-            },
+            headers=headers,
             params=params,
+            json=json,
         )
         if response.status_code in (401, 403):
             raise AmazonAdsPermissionError(f"Amazon Ads permission denied for {path}")
@@ -114,6 +136,11 @@ class AmazonAdsClient:
             raise AmazonAdsRateLimitError(f"Amazon Ads rate limit; retry after {retry_after}")
         response.raise_for_status()
         return response
+
+    async def _get(
+        self, path: str, *, profile_id: str | None = None, params: dict[str, Any] | None = None
+    ) -> httpx.Response:
+        return await self._request("GET", path, profile_id=profile_id, params=params)
 
     async def verify_connection(self) -> None:
         if not self.config.profile_ids:
@@ -142,7 +169,7 @@ class AmazonAdsClient:
         self, request: SyncRequest, profile_id: str, cursor: str | None
     ) -> AsyncIterator[RawSourcePage]:
         while True:
-            params: dict[str, Any] = {"profileId": profile_id}
+            params: dict[str, Any] = {}
             if cursor:
                 params["nextToken"] = cursor
             if request.resource_type in {
@@ -158,7 +185,9 @@ class AmazonAdsClient:
                         "endDate": request.window_end.date().isoformat(),
                     }
                 )
-            response = await self._get(f"v2/{request.resource_type}", params=params)
+            response = await self._get(
+                f"v2/{request.resource_type}", profile_id=profile_id, params=params
+            )
             body = response.content
             payload = response.json()
             next_token = payload.get("nextToken") if isinstance(payload, dict) else None
@@ -173,3 +202,63 @@ class AmazonAdsClient:
             if not next_token:
                 break
             cursor = str(next_token)
+
+    async def create_report(
+        self,
+        *,
+        profile_id: str,
+        name: str,
+        start_date: str,
+        end_date: str,
+        configuration: dict[str, Any],
+    ) -> str:
+        response = await self._request(
+            "POST",
+            "reporting/reports",
+            profile_id=profile_id,
+            json={
+                "name": name,
+                "startDate": start_date,
+                "endDate": end_date,
+                "configuration": configuration,
+            },
+        )
+        payload = response.json()
+        report_id = payload.get("reportId") if isinstance(payload, dict) else None
+        if not isinstance(report_id, str) or not report_id:
+            raise AmazonAdsReportError("Amazon report response did not contain reportId")
+        return report_id
+
+    async def fetch_report_document(
+        self,
+        *,
+        profile_id: str,
+        report_id: str,
+        poll_interval_seconds: float = 2.0,
+        max_poll_attempts: int = 60,
+    ) -> RawSourcePage:
+        for attempt in range(max_poll_attempts):
+            response = await self._get(f"reporting/reports/{report_id}", profile_id=profile_id)
+            payload = response.json()
+            status = payload.get("status") if isinstance(payload, dict) else None
+            if status == "COMPLETED":
+                url = payload.get("url")
+                if not isinstance(url, str) or not url:
+                    raise AmazonAdsReportError("Completed Amazon report did not contain a URL")
+                document = await self._client.get(url)
+                document.raise_for_status()
+                body = document.content
+                return RawSourcePage(
+                    SOURCE_TYPE,
+                    "report",
+                    body,
+                    document.headers.get("Content-Type", "application/octet-stream"),
+                    _fingerprint(body),
+                    None,
+                )
+            if status in {"FAILURE", "FAILED", "CANCELLED", "EXPIRED"}:
+                reason = payload.get("failureReason", "unknown failure")
+                raise AmazonAdsReportError(f"Amazon report {status.lower()}: {reason}")
+            if attempt + 1 < max_poll_attempts and poll_interval_seconds:
+                await asyncio.sleep(poll_interval_seconds)
+        raise AmazonAdsReportTimeoutError("Amazon report did not complete before polling expired")
