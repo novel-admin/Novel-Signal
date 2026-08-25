@@ -22,6 +22,7 @@ def estimate(**overrides: object) -> UnitsEstimateCreate:
         "input_coverage": 0.8,
         "method": "bsr_power_law:v1",
         "model_version": "bsr-v1",
+        "input_evidence": {"observations": ["bsr-1"]},
     }
     values.update(overrides)
     return UnitsEstimateCreate.model_validate(values)
@@ -52,7 +53,13 @@ def test_share_bounds_are_explicit() -> None:
         share_point=0.15,
         share_high=0.2,
         confidence="low",
-        input_coverage=0.4,
+        input_coverage=0.8,
         model_version="bsr-v1",
+        input_evidence={"estimates": ["estimate-1"]},
     )
     assert share.share_low <= share.share_point <= share.share_high
+
+
+def test_estimate_refuses_low_input_coverage() -> None:
+    with pytest.raises(ValidationError, match="input coverage"):
+        estimate(input_coverage=0.4)

@@ -26,6 +26,7 @@ class UnitsModelFit(Base):
     category_node: Mapped[str] = mapped_column(String(160), nullable=False)
     pack_size: Mapped[str | None] = mapped_column(String(80))
     model_version: Mapped[str] = mapped_column(String(80), nullable=False)
+    input_evidence: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
     trained_from: Mapped[date] = mapped_column(Date, nullable=False)
     trained_to: Mapped[date] = mapped_column(Date, nullable=False)
     sample_count: Mapped[int] = mapped_column(Integer, nullable=False)
@@ -62,6 +63,7 @@ class UnitsEstimate(Base):
     method: Mapped[str] = mapped_column(String(120), nullable=False)
     cross_check_units: Mapped[float | None] = mapped_column(Float)
     divergence_warning: Mapped[str | None] = mapped_column(Text)
+    input_evidence: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
     model_version: Mapped[str] = mapped_column(String(80), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
@@ -70,9 +72,7 @@ class UnitsEstimate(Base):
 
 class MarketShareDaily(Base):
     __tablename__ = "market_share_daily"
-    __table_args__ = (
-        UniqueConstraint("entity_id", "observed_on", "segment_key", "model_version"),
-    )
+    __table_args__ = (UniqueConstraint("entity_id", "observed_on", "segment_key", "model_version"),)
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
     platform: Mapped[str] = mapped_column(String(40), nullable=False)
@@ -93,6 +93,7 @@ class MarketShareDaily(Base):
     input_coverage: Mapped[float] = mapped_column(Float, nullable=False)
     model_version: Mapped[str] = mapped_column(String(80), nullable=False)
     divergence_warning: Mapped[str | None] = mapped_column(Text)
+    input_evidence: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
 
 
 class ModelBacktest(Base):

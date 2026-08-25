@@ -31,8 +31,11 @@ def create_model_fit(session: Session, data: ModelFitCreate) -> UnitsModelFit:
 
 
 def create_estimate(session: Session, data: UnitsEstimateCreate) -> UnitsEstimate:
-    if not session.get(UnitsModelFit, data.model_fit_id):
+    fit = session.get(UnitsModelFit, data.model_fit_id)
+    if not fit:
         raise MarketShareError("model fit not found")
+    if fit.status != "active" or fit.model_version != data.model_version:
+        raise MarketShareError("estimate must use the matching active model version")
     existing = session.scalar(
         select(UnitsEstimate).where(
             UnitsEstimate.entity_id == data.entity_id,
@@ -90,9 +93,7 @@ def create_backtest(session: Session, data: BacktestCreate) -> ModelBacktest:
     return backtest
 
 
-def list_items(
-    session: Session, model: Any, *, limit: int, cursor: str | None
-) -> list[Any]:
+def list_items(session: Session, model: Any, *, limit: int, cursor: str | None) -> list[Any]:
     query: Any = select(model).order_by(model.id).limit(limit + 1)
     if cursor:
         query = query.where(model.id > cursor)

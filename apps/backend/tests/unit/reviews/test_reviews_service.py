@@ -1,9 +1,9 @@
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 
 from novel_signal.db import Base
 from novel_signal.modules.reviews.models import ReviewObservation, ReviewTopic
 from novel_signal.modules.reviews.schemas import ReviewCreate
-from novel_signal.modules.reviews.service import ingest_review, topic_summary
+from novel_signal.modules.reviews.service import ingest_review, review_metrics, topic_summary
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
@@ -62,3 +62,22 @@ def test_unpublished_reviews_do_not_reach_topic_metrics() -> None:
         ),
     )
     assert topic_summary(db, "product-1", None, None, None) == []
+
+
+def test_review_metrics_show_velocity_and_rating_change() -> None:
+    db = session()
+    ingest_review(db, review().model_copy(update={"published_on": date(2026, 8, 24)}))
+    ingest_review(
+        db,
+        review("source-2").model_copy(
+            update={
+                "source_review_id": "review-2",
+                "rating": 4,
+                "published_on": date(2026, 8, 25),
+            }
+        ),
+    )
+    metrics = review_metrics(db, "product-1", None, None)
+    assert metrics.review_count == 2
+    assert metrics.review_velocity_per_day == 1
+    assert metrics.rating_change == 2

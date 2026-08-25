@@ -14,9 +14,11 @@ def list_reviews(
     limit: int,
     cursor: str | None,
 ) -> list[ReviewObservation]:
-    query = select(ReviewObservation).order_by(
-        ReviewObservation.captured_at.desc(), ReviewObservation.id.desc()
-    ).limit(limit + 1)
+    query = (
+        select(ReviewObservation)
+        .order_by(ReviewObservation.captured_at.desc(), ReviewObservation.id.desc())
+        .limit(limit + 1)
+    )
     if target_id:
         query = query.where(ReviewObservation.target_id == target_id)
     if platform:
@@ -39,4 +41,3 @@ def list_trends(
     if end:
         query = query.where(ReviewTopicTrend.period_start <= end)
     return list(session.scalars(query))
-

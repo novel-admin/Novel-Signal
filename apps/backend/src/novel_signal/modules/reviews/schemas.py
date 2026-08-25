@@ -64,6 +64,18 @@ class TopicSummary(BaseModel):
     confidence: str
 
 
+class ReviewMetrics(BaseModel):
+    target_id: str
+    review_count: int
+    average_rating: float | None
+    review_velocity_per_day: float | None
+    rating_change: float | None
+    period_start: date | None
+    period_end: date | None
+    sample_size: int
+    confidence: str
+
+
 class TrendRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     target_id: str

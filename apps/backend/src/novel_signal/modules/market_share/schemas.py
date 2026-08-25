@@ -16,11 +16,16 @@ class ModelFitCreate(BaseModel):
     trained_to: date
     sample_count: int = Field(ge=1)
     metrics: dict[str, Any] = Field(default_factory=dict)
+    input_evidence: dict[str, Any] = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def valid_dates(self) -> "ModelFitCreate":
         if self.trained_to < self.trained_from:
             raise ValueError("trained_to must not be before trained_from")
+        if self.sample_count < 30:
+            raise ValueError("at least 30 observations are required to fit a model")
+        if not self.metrics or not self.input_evidence:
+            raise ValueError("model fits require error metrics and input evidence")
         return self
 
 
@@ -54,6 +59,7 @@ class UnitsEstimateCreate(BaseModel):
     cross_check_units: float | None = Field(default=None, ge=0)
     divergence_warning: str | None = None
     model_version: str
+    input_evidence: dict[str, Any] = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def valid_ranges(self) -> "UnitsEstimateCreate":
@@ -65,6 +71,10 @@ class UnitsEstimateCreate(BaseModel):
             ratio = abs(self.cross_check_units - self.units_point) / self.units_point
             if ratio >= 0.5 and not self.divergence_warning:
                 raise ValueError("divergent cross-check requires divergence_warning")
+        if self.input_coverage < 0.6:
+            raise ValueError("input coverage is below the estimation minimum")
+        if not self.input_evidence:
+            raise ValueError("estimates require input evidence")
         return self
 
 
@@ -93,6 +103,7 @@ class MarketShareCreate(BaseModel):
     input_coverage: float = Field(ge=0, le=1)
     model_version: str
     divergence_warning: str | None = None
+    input_evidence: dict[str, Any] = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def valid_ranges(self) -> "MarketShareCreate":
@@ -100,6 +111,10 @@ class MarketShareCreate(BaseModel):
             raise ValueError("unit bounds must contain units_point")
         if not self.share_low <= self.share_point <= self.share_high:
             raise ValueError("share bounds must contain share_point")
+        if self.input_coverage < 0.6:
+            raise ValueError("input coverage is below the estimation minimum")
+        if not self.input_evidence:
+            raise ValueError("market share requires input evidence")
         return self
 
 
