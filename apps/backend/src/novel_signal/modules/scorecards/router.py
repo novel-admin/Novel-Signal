@@ -5,8 +5,8 @@ from sqlalchemy.orm import Session
 
 from novel_signal.db import get_db
 
-from .schemas import ScorecardPage, ScorecardRead, ScorecardUpsert
-from .service import list_scorecards, upsert_scorecard
+from .schemas import ScorecardEvaluationRead, ScorecardPage, ScorecardRead, ScorecardUpsert
+from .service import evaluate_scorecard, list_scorecards, upsert_scorecard
 
 router = APIRouter(prefix="/scorecards", tags=["S9 Scorecards"])
 
@@ -19,6 +19,18 @@ def module_meta() -> dict[str, str]:
 @router.post("", response_model=ScorecardRead)
 def create_scorecard(data: ScorecardUpsert, session: Session = Depends(get_db)) -> ScorecardRead:
     return ScorecardRead.model_validate(upsert_scorecard(session, data))
+
+
+@router.post("/evaluate", response_model=ScorecardEvaluationRead)
+def evaluate(data: ScorecardUpsert, session: Session = Depends(get_db)) -> ScorecardEvaluationRead:
+    result = evaluate_scorecard(session, data)
+    return ScorecardEvaluationRead(
+        scorecard=ScorecardRead.model_validate(result.scorecard),
+        gap_id=result.gap.id if result.gap else None,
+        action_id=result.action.id if result.action else None,
+        alert_id=result.alert.id if result.alert else None,
+        non_actionable_reason=result.non_actionable_reason,
+    )
 
 
 @router.get("", response_model=ScorecardPage)

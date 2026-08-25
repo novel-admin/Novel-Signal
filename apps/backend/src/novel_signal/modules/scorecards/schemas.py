@@ -57,3 +57,11 @@ class ScorecardRead(ScorecardUpsert):
 class ScorecardPage(BaseModel):
     items: list[ScorecardRead]
     next_cursor: str | None = None
+
+
+class ScorecardEvaluationRead(BaseModel):
+    scorecard: ScorecardRead
+    gap_id: str | None = None
+    action_id: str | None = None
+    alert_id: str | None = None
+    non_actionable_reason: str | None = None
