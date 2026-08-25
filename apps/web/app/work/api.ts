@@ -1,5 +1,5 @@
 import { getAllPages, request } from "@novel-signal/api-client";
-import type { Action, ActionDetail, ChangeEvent, Page } from "./types";
+import type { Action, ActionDetail, ChangeEvent } from "./types";
 
 export const loadChanges = (eventType?: string) =>
   getAllPages<ChangeEvent>(eventType ? `/changes?event_type=${encodeURIComponent(eventType)}` : "/changes");

@@ -41,6 +41,22 @@ def create_gap(data: GapCreate, session: Session = Depends(get_db)) -> GapRead:
     return GapRead.model_validate(service.create_gap(session, data))
 
 
+@router.get("/gaps", response_model=Page)
+def gaps(
+    limit: int = Query(50, ge=1, le=100),
+    cursor: str | None = None,
+    status_filter: str | None = Query(None, alias="status"),
+    session: Session = Depends(get_db),
+) -> Page:
+    rows = repository.list_gaps(session, limit=limit, cursor=cursor, status=status_filter)
+    has_next = len(rows) > limit
+    rows = rows[:limit]
+    return Page(
+        items=[GapRead.model_validate(row) for row in rows],
+        next_cursor=rows[-1].id if has_next and rows else None,
+    )
+
+
 @router.post("/actions/{action_id}/impact", status_code=status.HTTP_201_CREATED)
 def add_impact(
     action_id: str, data: ImpactCreate, session: Session = Depends(get_db)
