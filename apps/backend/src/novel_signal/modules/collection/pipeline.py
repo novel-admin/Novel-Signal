@@ -21,7 +21,6 @@ from novel_signal.modules.collection.models import (
     DataQualityStatus,
     ParserVersion,
     RawEvidence,
-    RawEvidenceType,
 )
 from novel_signal.modules.collection.parsing import (
     EnvelopeValidator,
@@ -29,6 +28,7 @@ from novel_signal.modules.collection.parsing import (
     ParserRegistry,
     ValidationResult,
 )
+from novel_signal.modules.collection.raw_evidence import RawEvidenceWriter
 from novel_signal.modules.collection.repository import CollectionRepository
 from novel_signal.modules.collection.storage import RawObjectStore, S3RawObjectStore
 
@@ -77,6 +77,10 @@ class EvidencePipeline:
         self.parser_registry = parser_registry
         self.object_store = object_store or S3RawObjectStore()
         self.session_factory = session_factory
+        self.raw_evidence_writer = RawEvidenceWriter(
+            object_store=self.object_store,
+            session_factory=self.session_factory,
+        )
 
     def process(
         self,
@@ -215,46 +219,22 @@ class EvidencePipeline:
         capture: CaptureResult,
         captured_at: datetime,
     ) -> RawEvidence:
-        try:
-            stored = self.object_store.put_raw(
-                platform=platform,
-                page_type=request.page_type,
-                body=capture.body,
-            )
-        except Exception as error:
-            raise CollectionExecutionError(
-                "Raw evidence storage failed before parsing",
-                failure_type=CollectionFailureType.STORAGE_ERROR,
-                code="raw_storage_failed",
-                retryable=True,
-                details={"exception_type": type(error).__name__},
-            ) from error
-
-        with self.session_factory() as session:
-            evidence = RawEvidence(
-                job_id=job_id,
-                attempt_id=attempt_id,
-                evidence_type=RawEvidenceType.RESPONSE_BODY,
-                sha256=stored.sha256,
-                storage_bucket=stored.bucket,
-                object_key=stored.object_key,
-                content_type=capture.content_type,
-                byte_length=stored.byte_length,
-                compressed=True,
-                final_url=capture.final_url,
-                challenge_detected=capture.challenge_detected,
-                capture_metadata={
-                    "target_id": request.target_id,
-                    "page_type": request.page_type,
-                    "requested_url": request.url,
-                    "compressed_byte_length": stored.compressed_byte_length,
-                },
-                captured_at=captured_at,
-            )
-            session.add(evidence)
-            session.commit()  # intentional durability boundary: raw evidence exists before parsing
-            session.refresh(evidence)
-            return evidence
+        return self.raw_evidence_writer.persist(
+            job_id=job_id,
+            attempt_id=attempt_id,
+            platform=platform,
+            page_type=request.page_type,
+            body=capture.body,
+            content_type=capture.content_type,
+            final_url=capture.final_url,
+            challenge_detected=capture.challenge_detected,
+            capture_metadata={
+                "target_id": request.target_id,
+                "page_type": request.page_type,
+                "requested_url": request.url,
+            },
+            captured_at=captured_at,
+        )
 
     def _ensure_parser_version(
         self, *, platform: str, page_type: str, version: str
