@@ -9,7 +9,7 @@ export const metadata: Metadata = {
 
 const links = [
   ["Universe", "/universe"], ["Keywords", "/keywords"], ["Collection", "/collection"], ["Rank & Visibility", "/rank-visibility"], ["Listing Intelligence", "/listing-intelligence"], ["Price Monitoring", "/price-monitoring"], ["Products", "/products"],
-  ["Sources", "/sources"], ["Changes", "/changes"], ["Actions", "/actions"], ["Operations", "/operations"],
+  ["Sources", "/sources"], ["Ads", "/ads"], ["Reviews", "/reviews"], ["Market Share", "/market-share"], ["Scorecards", "/scorecards"], ["Alerts", "/alerts"], ["Changes", "/changes"], ["Actions", "/actions"], ["Operations", "/operations"],
 ] as const;
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {

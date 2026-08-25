@@ -1,7 +1,9 @@
 from datetime import date, datetime
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+from novel_signal.modules.evidence import require_published_lineage
 
 
 class ReviewCreate(BaseModel):
@@ -20,6 +22,16 @@ class ReviewCreate(BaseModel):
     quarantine_reason: str | None = None
     published_on: date | None = None
     evidence: dict[str, Any] | None = None
+
+    @model_validator(mode="after")
+    def published_evidence_is_complete(self) -> "ReviewCreate":
+        require_published_lineage(
+            self.publication_status,
+            self.raw_capture_id,
+            self.parse_run_id,
+            self.quarantine_reason,
+        )
+        return self
 
     @field_validator("text", "title")
     @classmethod
@@ -48,6 +60,18 @@ class TopicSummary(BaseModel):
     topic_type: str
     review_count: int
     average_rating: float | None
+    sample_size: int
+    confidence: str
+
+
+class ReviewMetrics(BaseModel):
+    target_id: str
+    review_count: int
+    average_rating: float | None
+    review_velocity_per_day: float | None
+    rating_change: float | None
+    period_start: date | None
+    period_end: date | None
     sample_size: int
     confidence: str
 

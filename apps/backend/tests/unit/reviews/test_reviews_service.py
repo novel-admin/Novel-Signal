@@ -1,9 +1,9 @@
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 
 from novel_signal.db import Base
 from novel_signal.modules.reviews.models import ReviewObservation, ReviewTopic
 from novel_signal.modules.reviews.schemas import ReviewCreate
-from novel_signal.modules.reviews.service import ingest_review, topic_summary
+from novel_signal.modules.reviews.service import ingest_review, review_metrics, topic_summary
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
@@ -25,6 +25,8 @@ def review(fingerprint: str = "source-1") -> ReviewCreate:
         title="Poor delivery",
         text="The package was late and caused irritation. contact me at test@example.com",
         captured_at=datetime.now(UTC),
+        raw_capture_id="raw-1",
+        parse_run_id="parser-v1",
     )
 
 
@@ -45,3 +47,37 @@ def test_topic_summary_exposes_low_confidence_for_small_samples() -> None:
     assert summary
     assert all(item.confidence == "low" for item in summary)
     assert all(item.sample_size == 1 for item in summary)
+
+
+def test_unpublished_reviews_do_not_reach_topic_metrics() -> None:
+    db = session()
+    ingest_review(
+        db,
+        review("source-2").model_copy(
+            update={
+                "source_review_id": "review-2",
+                "publication_status": "quarantined",
+                "quarantine_reason": "invalid evidence",
+            }
+        ),
+    )
+    assert topic_summary(db, "product-1", None, None, None) == []
+
+
+def test_review_metrics_show_velocity_and_rating_change() -> None:
+    db = session()
+    ingest_review(db, review().model_copy(update={"published_on": date(2026, 8, 24)}))
+    ingest_review(
+        db,
+        review("source-2").model_copy(
+            update={
+                "source_review_id": "review-2",
+                "rating": 4,
+                "published_on": date(2026, 8, 25),
+            }
+        ),
+    )
+    metrics = review_metrics(db, "product-1", None, None)
+    assert metrics.review_count == 2
+    assert metrics.review_velocity_per_day == 1
+    assert metrics.rating_change == 2

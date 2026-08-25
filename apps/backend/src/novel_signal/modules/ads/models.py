@@ -154,3 +154,31 @@ class OwnAdPerformance(Base):
     conversions: Mapped[int | None] = mapped_column(Integer)
     payload: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
     evidence_ref: Mapped[str | None] = mapped_column(Text)
+
+
+class AmazonAdsSearchTermContribution(Base):
+    __tablename__ = "amazon_ads_search_term_contributions"
+    __table_args__ = (
+        UniqueConstraint("fingerprint", name="uq_amazon_ads_search_term_fingerprint"),
+        Index("ix_amazon_ads_search_term_period", "period_start", "period_end"),
+    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    profile_id: Mapped[str] = mapped_column(String(120), nullable=False)
+    campaign_id: Mapped[str] = mapped_column(String(120), nullable=False)
+    ad_group_id: Mapped[str | None] = mapped_column(String(120))
+    search_term: Mapped[str] = mapped_column(String(500), nullable=False)
+    matched_keyword: Mapped[str | None] = mapped_column(String(500))
+    match_type: Mapped[str | None] = mapped_column(String(40))
+    period_start: Mapped[date] = mapped_column(Date, nullable=False)
+    period_end: Mapped[date] = mapped_column(Date, nullable=False)
+    impressions: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    clicks: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    spend: Mapped[float] = mapped_column(Float, nullable=False, default=0)
+    currency: Mapped[str] = mapped_column(String(3), nullable=False)
+    orders: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    sales: Mapped[float] = mapped_column(Float, nullable=False, default=0)
+    raw_capture_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    parse_run_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    report_id: Mapped[str] = mapped_column(String(120), nullable=False)
+    confidence: Mapped[str] = mapped_column(String(20), nullable=False, default="measured")
+    fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)

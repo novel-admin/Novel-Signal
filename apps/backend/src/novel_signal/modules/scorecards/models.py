@@ -28,13 +28,16 @@ class ScorecardCell(Base):
     entity_id: Mapped[str] = mapped_column(String(36), nullable=False)
     dimension: Mapped[str] = mapped_column(String(40), nullable=False)
     keyword_id: Mapped[str | None] = mapped_column(String(36))
-    score: Mapped[float] = mapped_column(nullable=False)
+    score: Mapped[float | None] = mapped_column(nullable=True)
     band: Mapped[str] = mapped_column(String(20), nullable=False)
     direction: Mapped[str] = mapped_column(String(20), nullable=False, default="flat")
     velocity: Mapped[float] = mapped_column(nullable=False, default=0)
     revenue_at_stake: Mapped[float | None] = mapped_column()
     confidence: Mapped[str] = mapped_column(String(20), nullable=False, default="measured")
     evidence: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    unknown_reason: Mapped[str | None] = mapped_column(String(255))
+    formula_version: Mapped[str] = mapped_column(String(80), nullable=False, default="scorecard-v1")
+    freshness_state: Mapped[str] = mapped_column(String(20), nullable=False, default="fresh")
     measured_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -46,7 +49,7 @@ class ScorecardHistory(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
     cell_id: Mapped[str] = mapped_column(String(36), nullable=False)
-    score: Mapped[float] = mapped_column(nullable=False)
+    score: Mapped[float | None] = mapped_column(nullable=True)
     band: Mapped[str] = mapped_column(String(20), nullable=False)
     direction: Mapped[str] = mapped_column(String(20), nullable=False)
     velocity: Mapped[float] = mapped_column(nullable=False)

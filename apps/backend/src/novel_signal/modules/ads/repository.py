@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from .models import (
     AdObservation,
     AdPresenceDaily,
+    AmazonAdsSearchTermContribution,
     SpendEstimate,
 )
 
@@ -42,3 +43,15 @@ def list_estimates(session: Session, *, competitor_id: str, limit: int) -> list[
             .limit(limit)
         )
     )
+
+
+def list_search_term_contributions(
+    session: Session, *, profile_id: str | None, limit: int
+) -> list[AmazonAdsSearchTermContribution]:
+    query = select(AmazonAdsSearchTermContribution).order_by(
+        AmazonAdsSearchTermContribution.period_end.desc(),
+        AmazonAdsSearchTermContribution.id,
+    )
+    if profile_id:
+        query = query.where(AmazonAdsSearchTermContribution.profile_id == profile_id)
+    return list(session.scalars(query.limit(limit)))

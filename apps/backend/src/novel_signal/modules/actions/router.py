@@ -41,6 +41,22 @@ def create_gap(data: GapCreate, session: Session = Depends(get_db)) -> GapRead:
     return GapRead.model_validate(service.create_gap(session, data))
 
 
+@router.get("/gaps", response_model=Page)
+def gaps(
+    limit: int = Query(50, ge=1, le=100),
+    cursor: str | None = None,
+    status_filter: str | None = Query(None, alias="status"),
+    session: Session = Depends(get_db),
+) -> Page:
+    rows = repository.list_gaps(session, limit=limit, cursor=cursor, status=status_filter)
+    has_next = len(rows) > limit
+    rows = rows[:limit]
+    return Page(
+        items=[GapRead.model_validate(row) for row in rows],
+        next_cursor=rows[-1].id if has_next and rows else None,
+    )
+
+
 @router.post("/actions/{action_id}/impact", status_code=status.HTTP_201_CREATED)
 def add_impact(
     action_id: str, data: ImpactCreate, session: Session = Depends(get_db)
@@ -81,6 +97,20 @@ def create_action_from_change(
 ) -> ActionRead:
     if data.change_event_id != event_id:
         raise HTTPException(status_code=422, detail="change_event_id must match the path")
+    try:
+        return ActionRead.model_validate(service.create_action(session, data))
+    except service.ActionsError as error:
+        raise _expected_error(error) from error
+
+
+@router.post(
+    "/gaps/{gap_id}/actions", response_model=ActionRead, status_code=status.HTTP_201_CREATED
+)
+def create_action_from_gap(
+    gap_id: str, data: ActionCreate, session: Session = Depends(get_db)
+) -> ActionRead:
+    if data.gap_id != gap_id:
+        raise HTTPException(status_code=422, detail="gap_id must match the path")
     try:
         return ActionRead.model_validate(service.create_action(session, data))
     except service.ActionsError as error:

@@ -1,7 +1,7 @@
 from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 
-from .models import Action, ChangeEvent
+from .models import Action, ChangeEvent, Gap
 
 
 def get_change(session: Session, event_id: str) -> ChangeEvent | None:
@@ -37,4 +37,13 @@ def list_actions(
         query = query.where(Action.status == status)
     if cursor:
         query = query.where(Action.id < cursor)
+    return list(session.scalars(query))
+
+
+def list_gaps(session: Session, *, limit: int, cursor: str | None, status: str | None) -> list[Gap]:
+    query = select(Gap).order_by(Gap.created_at.desc(), Gap.id.desc()).limit(limit + 1)
+    if status:
+        query = query.where(Gap.status == status)
+    if cursor:
+        query = query.where(Gap.id < cursor)
     return list(session.scalars(query))

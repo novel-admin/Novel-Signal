@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from novel_signal.db import get_db
 
 from . import repository, service
-from .schemas import Page, ReviewCreate, ReviewRead, TopicSummary, TrendRead
+from .schemas import Page, ReviewCreate, ReviewMetrics, ReviewRead, TopicSummary, TrendRead
 
 router = APIRouter(prefix="/reviews", tags=["S7 Reviews"])
 
@@ -60,3 +60,13 @@ def trends(
     session: Session = Depends(get_db),
 ) -> list[TrendRead]:
     return [TrendRead.model_validate(row) for row in service.trends(session, target_id, start, end)]
+
+
+@router.get("/metrics", response_model=ReviewMetrics)
+def metrics(
+    target_id: str,
+    start: date | None = None,
+    end: date | None = None,
+    session: Session = Depends(get_db),
+) -> ReviewMetrics:
+    return service.review_metrics(session, target_id, start, end)

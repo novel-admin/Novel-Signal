@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from .models import ReviewObservation, ReviewTopic, ReviewTopicTrend
 from .repository import list_trends
-from .schemas import ReviewCreate, TopicSummary
+from .schemas import ReviewCreate, ReviewMetrics, TopicSummary
 
 TOPIC_RULES: tuple[tuple[str, str, tuple[str, ...]], ...] = (
     ("leakage", "complaint", ("leak", "leaking", "spill")),
@@ -78,6 +78,12 @@ def topic_summary(
             func.avg(ReviewObservation.rating),
         )
         .join(ReviewObservation, ReviewObservation.id == ReviewTopic.review_id)
+        .where(
+            ReviewObservation.publication_status == "published",
+            ReviewObservation.raw_capture_id.is_not(None),
+            ReviewObservation.parse_run_id.is_not(None),
+            ReviewObservation.quarantine_reason.is_(None),
+        )
         .group_by(ReviewTopic.topic, ReviewTopic.topic_type)
         .order_by(ReviewTopic.topic)
     )
@@ -106,7 +112,13 @@ def trends(
     session: Session, target_id: str | None, start: date | None, end: date | None
 ) -> list[ReviewTopicTrend]:
     # Materialize deterministic weekly aggregates; repeated requests update the same unique rows.
-    query = select(ReviewObservation).where(ReviewObservation.published_on.is_not(None))
+    query = select(ReviewObservation).where(
+        ReviewObservation.published_on.is_not(None),
+        ReviewObservation.publication_status == "published",
+        ReviewObservation.raw_capture_id.is_not(None),
+        ReviewObservation.parse_run_id.is_not(None),
+        ReviewObservation.quarantine_reason.is_(None),
+    )
     if target_id:
         query = query.where(ReviewObservation.target_id == target_id)
     if start:
@@ -137,11 +149,67 @@ def trends(
             existing.sample_size = len(values)
             existing.confidence = _confidence(len(values))
         else:
-            session.add(ReviewTopicTrend(
-                target_id=row_target, period_start=week, topic=topic, topic_type=kind,
-                review_count=len(values),
-                average_rating=sum(v.rating for v in values) / len(values),
-                sample_size=len(values), confidence=_confidence(len(values)),
-            ))
+            session.add(
+                ReviewTopicTrend(
+                    target_id=row_target,
+                    period_start=week,
+                    topic=topic,
+                    topic_type=kind,
+                    review_count=len(values),
+                    average_rating=sum(v.rating for v in values) / len(values),
+                    sample_size=len(values),
+                    confidence=_confidence(len(values)),
+                )
+            )
     session.commit()
     return list_trends(session, target_id, start, end)
+
+
+def review_metrics(
+    session: Session, target_id: str, start: date | None, end: date | None
+) -> ReviewMetrics:
+    query = select(ReviewObservation).where(
+        ReviewObservation.target_id == target_id,
+        ReviewObservation.publication_status == "published",
+        ReviewObservation.raw_capture_id.is_not(None),
+        ReviewObservation.parse_run_id.is_not(None),
+        ReviewObservation.quarantine_reason.is_(None),
+        ReviewObservation.published_on.is_not(None),
+    )
+    if start:
+        query = query.where(ReviewObservation.published_on >= start)
+    if end:
+        query = query.where(ReviewObservation.published_on <= end)
+    rows = sorted(session.scalars(query), key=lambda row: row.published_on or date.min)
+    if not rows:
+        return ReviewMetrics(
+            target_id=target_id,
+            review_count=0,
+            average_rating=None,
+            review_velocity_per_day=None,
+            rating_change=None,
+            period_start=start,
+            period_end=end,
+            sample_size=0,
+            confidence="low",
+        )
+    first_day = rows[0].published_on
+    last_day = rows[-1].published_on
+    assert first_day is not None and last_day is not None
+    days = max((last_day - first_day).days + 1, 1)
+    split = max(len(rows) // 2, 1)
+    early = rows[:split]
+    late = rows[split:] or rows[-1:]
+    early_rating = sum(row.rating for row in early) / len(early)
+    late_rating = sum(row.rating for row in late) / len(late)
+    return ReviewMetrics(
+        target_id=target_id,
+        review_count=len(rows),
+        average_rating=round(sum(row.rating for row in rows) / len(rows), 2),
+        review_velocity_per_day=round(len(rows) / days, 3),
+        rating_change=round(late_rating - early_rating, 2),
+        period_start=first_day,
+        period_end=last_day,
+        sample_size=len(rows),
+        confidence=_confidence(len(rows)),
+    )
