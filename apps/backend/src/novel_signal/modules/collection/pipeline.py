@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import uuid
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -113,13 +114,64 @@ class EvidencePipeline:
                 details={"raw_evidence_id": str(raw.id)},
             )
 
+        return self.process_persisted_raw(
+            job_id=job_id,
+            attempt_id=attempt_id,
+            raw_evidence_id=raw.id,
+            platform=platform,
+            page_type=request.page_type,
+            body=capture.body,
+            validator=validator,
+            publisher=publisher,
+            captured_at=captured,
+        )
+
+    def process_persisted_raw(
+        self,
+        *,
+        job_id: uuid.UUID,
+        attempt_id: uuid.UUID,
+        raw_evidence_id: uuid.UUID,
+        platform: str,
+        page_type: str,
+        body: bytes,
+        validator: EnvelopeValidator,
+        publisher: NormalizedPublisher,
+        captured_at: datetime | None = None,
+    ) -> CollectionExecutionResult:
+        """Parse and publish an already durable raw response without writing it again."""
+        with self.session_factory() as session:
+            raw_evidence = session.get(RawEvidence, raw_evidence_id)
+            if raw_evidence is None:
+                raise CollectionExecutionError(
+                    "Raw evidence was not found for downstream processing",
+                    failure_type=CollectionFailureType.VALIDATION_ERROR,
+                    code="raw_evidence_not_found",
+                    retryable=False,
+                )
+            if raw_evidence.job_id != job_id or raw_evidence.attempt_id != attempt_id:
+                raise CollectionExecutionError(
+                    "Raw evidence does not match the collection attempt",
+                    failure_type=CollectionFailureType.VALIDATION_ERROR,
+                    code="raw_evidence_lineage_mismatch",
+                    retryable=False,
+                )
+            if hashlib.sha256(body).hexdigest() != raw_evidence.sha256:
+                raise CollectionExecutionError(
+                    "Body does not match the immutable raw evidence",
+                    failure_type=CollectionFailureType.VALIDATION_ERROR,
+                    code="raw_evidence_body_mismatch",
+                    retryable=False,
+                )
+            captured = (captured_at or raw_evidence.captured_at).astimezone(UTC)
+
         try:
-            parser = self.parser_registry.get(platform, request.page_type)
+            parser = self.parser_registry.get(platform, page_type)
         except ParserNotRegisteredError as error:
             return CollectionExecutionResult(
-                metadata={"raw_evidence_id": str(raw.id)},
+                metadata={"raw_evidence_id": str(raw_evidence_id)},
                 quarantine=QuarantineDecision(
-                    raw_evidence_id=raw.id,
+                    raw_evidence_id=raw_evidence_id,
                     parser_version_id=None,
                     failure_type=CollectionFailureType.PARSE_ERROR,
                     reason_code="parser_not_registered",
@@ -131,16 +183,15 @@ class EvidencePipeline:
 
         parser_version = self._ensure_parser_version(
             platform=platform,
-            page_type=request.page_type,
+            page_type=page_type,
             version=parser.version,
         )
-
         try:
-            envelope = parser.parse(capture.body)
+            envelope = parser.parse(body)
         except Exception as error:
             self._record_quality(
                 platform=platform,
-                page_type=request.page_type,
+                page_type=page_type,
                 check_type=DataQualityCheckType.CONSISTENCY,
                 status=DataQualityStatus.FAIL,
                 observed={"exception_type": type(error).__name__},
@@ -149,9 +200,9 @@ class EvidencePipeline:
                 details={"message": str(error)},
             )
             return CollectionExecutionResult(
-                metadata={"raw_evidence_id": str(raw.id)},
+                metadata={"raw_evidence_id": str(raw_evidence_id)},
                 quarantine=QuarantineDecision(
-                    raw_evidence_id=raw.id,
+                    raw_evidence_id=raw_evidence_id,
                     parser_version_id=parser_version.id,
                     failure_type=CollectionFailureType.PARSE_ERROR,
                     reason_code="parser_exception",
@@ -165,19 +216,19 @@ class EvidencePipeline:
 
         validation = validator.validate(
             envelope,
-            expected_page_type=request.page_type,
+            expected_page_type=page_type,
             expected_parser_version=parser.version,
         )
         self._record_validation_quality(
             platform=platform,
-            page_type=request.page_type,
+            page_type=page_type,
             validation=validation,
         )
         if not validation.valid:
             return CollectionExecutionResult(
-                metadata={"raw_evidence_id": str(raw.id)},
+                metadata={"raw_evidence_id": str(raw_evidence_id)},
                 quarantine=QuarantineDecision(
-                    raw_evidence_id=raw.id,
+                    raw_evidence_id=raw_evidence_id,
                     parser_version_id=parser_version.id,
                     failure_type=CollectionFailureType.VALIDATION_ERROR,
                     reason_code="schema_validation_failed",
@@ -191,17 +242,17 @@ class EvidencePipeline:
             PublishContext(
                 job_id=job_id,
                 attempt_id=attempt_id,
-                raw_evidence_id=raw.id,
+                raw_evidence_id=raw_evidence_id,
                 parser_version_id=parser_version.id,
                 platform=platform,
-                page_type=request.page_type,
+                page_type=page_type,
                 captured_at=captured,
             ),
             envelope.records,
         )
         return CollectionExecutionResult(
             metadata={
-                "raw_evidence_id": str(raw.id),
+                "raw_evidence_id": str(raw_evidence_id),
                 "parser_version_id": str(parser_version.id),
                 "parser_version": parser.version,
                 "row_count": len(envelope.records),
