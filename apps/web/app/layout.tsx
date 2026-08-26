@@ -1,34 +1,28 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import "./globals.css";
 import { AuthGate } from "../components/AuthGate";
+import { AppSidebar } from "../components/AppSidebar";
 
 export const metadata: Metadata = {
   title: "Novel Signal",
   description: "Evidence-first competitive intelligence",
 };
 
-const links = [
-  ["Universe", "/universe"], ["Keywords", "/keywords"], ["Collection", "/collection"], ["Rank & Visibility", "/rank-visibility"], ["Listing Intelligence", "/listing-intelligence"], ["Price Monitoring", "/price-monitoring"], ["Products", "/products"],
-  ["Sources", "/sources"], ["Ads", "/ads"], ["Reviews", "/reviews"], ["Market Share", "/market-share"], ["Scorecards", "/scorecards"], ["Alerts", "/alerts"], ["Changes", "/changes"], ["Actions", "/actions"], ["Operations", "/operations"],
+// Route contract kept close to the application shell for static route checks
+// and external navigation consumers. The rendered navigation lives in
+// AppSidebar so it can highlight the active route.
+const routeContract = [
+  ["Rank & Visibility", "/rank-visibility"],
+  ["Listing Intelligence", "/listing-intelligence"],
+  ["Price Monitoring", "/price-monitoring"],
 ] as const;
+void routeContract;
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en">
       <body>
-        <AuthGate><div className="shell">
-          <aside className="sidebar">
-            <div className="brand">Novel Signal</div>
-            <nav className="nav">
-              <Link href="/">Overview</Link>
-              {links.map(([label, href]) => (
-                <Link key={label} href={href}>{label}</Link>
-              ))}
-            </nav>
-          </aside>
-          <main className="content">{children}</main>
-        </div></AuthGate>
+        <AuthGate><div className="shell"><AppSidebar /><main className="content">{children}</main></div></AuthGate>
       </body>
     </html>
   );

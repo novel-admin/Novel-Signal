@@ -26,6 +26,7 @@ def test_all_required_week_one_sources_are_registered() -> None:
         "amazon_ads_api",
         "amazon_brand_analytics",
         "google_search_console",
+        "google_ads_api",
         "meta_marketing_api",
         "meta_ad_library",
         "amazon_public_pages",

@@ -39,7 +39,6 @@ from novel_signal.modules.collection.service import (
     CollectionLifecycleService,
     CollectionPlanningService,
 )
-from novel_signal.tasks.collection import run_collection_job
 
 router = APIRouter(prefix="/collection", tags=["S12 Collection"])
 SessionDep = Annotated[Session, Depends(get_db)]
@@ -116,7 +115,9 @@ def dispatch_job(job_id: uuid.UUID, session: SessionDep) -> CollectionDispatchRe
                 "message": f"Collection job is {job.status.value}, not pending",
             },
         )
-    run_collection_job.delay(str(job.id))
+    # Render Cron claims pending jobs from PostgreSQL.  This endpoint records
+    # intent only; it never starts a long-running browser or source request in
+    # the API process.
     return CollectionDispatchResult(dispatched=1, job_ids=[job.id])
 
 

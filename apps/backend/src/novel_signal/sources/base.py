@@ -9,6 +9,7 @@ class SourceType(StrEnum):
     AMAZON_ADS_API = "amazon_ads_api"
     AMAZON_BRAND_ANALYTICS = "amazon_brand_analytics"
     GOOGLE_SEARCH_CONSOLE = "google_search_console"
+    GOOGLE_ADS_API = "google_ads_api"
     META_MARKETING_API = "meta_marketing_api"
     META_AD_LIBRARY = "meta_ad_library"
     AMAZON_PUBLIC_PAGES = "amazon_public_pages"

@@ -94,5 +94,5 @@ def get_executor(platform: str, job_type: CollectionJobType) -> CollectionExecut
 def execute_async(
     awaitable: Coroutine[object, object, CollectionExecutionResult],
 ) -> CollectionExecutionResult:
-    """Run one async executor from a synchronous Celery worker task."""
+    """Run one async executor from the synchronous scheduled-job boundary."""
     return asyncio.run(awaitable)

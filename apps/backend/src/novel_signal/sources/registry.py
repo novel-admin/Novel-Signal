@@ -37,6 +37,15 @@ def source_definitions(settings: Settings | None = None) -> tuple[SourceDefiniti
             config.google_search_console_sites,
         )
     )
+    google_ads_configured = all(
+        (
+            config.google_ads_developer_token.get_secret_value(),
+            config.google_ads_client_id,
+            config.google_ads_client_secret.get_secret_value(),
+            config.google_ads_refresh_token.get_secret_value(),
+            config.google_ads_customer_id,
+        )
+    )
     meta_configured = all(
         (
             config.meta_app_id,
@@ -70,6 +79,12 @@ def source_definitions(settings: Settings | None = None) -> tuple[SourceDefiniti
             "Akanksh",
             "Novel-owned search performance",
             gsc_configured,
+        ),
+        SourceDefinition(
+            SourceType.GOOGLE_ADS_API,
+            "Palguna",
+            "Novel Google advertising data",
+            google_ads_configured,
         ),
         SourceDefinition(
             SourceType.META_MARKETING_API,

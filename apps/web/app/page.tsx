@@ -3,6 +3,9 @@
 import { useEffect, useState } from "react";
 import { WorkLoading } from "../components/WorkStates";
 import { loadRows } from "./intelligence/api";
+import { OverviewChart } from "../components/OverviewChart";
+import { Badge } from "../components/ui/badge";
+import { Card, CardHeader, CardTitle } from "../components/ui/card";
 
 type Summary = { scorecards: number; gaps: number; actions: number; alerts: number; partial: boolean };
 
@@ -20,15 +23,19 @@ export default function OverviewPage() {
   }, []);
   return (
     <>
-      <div className="eyebrow">Evidence-first overview</div>
-      <h1>Competitive watchtower</h1>
-      <p className="lede">See where Novel leads or lags, inspect evidence, and act on important changes.</p>
-      {!summary ? <WorkLoading /> : <><div role="status">{summary.partial ? "Some intelligence services are unavailable. Available results are shown below." : "All intelligence summaries loaded."}</div>
-        <section className="grid"><Card label="Scorecard cells" value={summary.scorecards}/><Card label="Open gaps" value={summary.gaps}/><Card label="Actions" value={summary.actions}/><Card label="Alerts" value={summary.alerts}/></section></>}
+      <div className="page-heading">
+        <div><div className="eyebrow">Evidence-first overview</div><h1>Competitive watchtower</h1><p className="lede">See where Novel leads or lags, inspect the source evidence, and act on important changes.</p></div>
+        <Badge variant={summary?.partial ? "warning" : "success"}>{summary?.partial ? "Partial data" : "Data connected"}</Badge>
+      </div>
+      {!summary ? <WorkLoading /> : <>
+        <div className="screen-reader-status" role="status">{summary.partial ? "Some intelligence services are unavailable. Available results are shown below." : "All intelligence summaries loaded."}</div>
+        <section className="metric-grid"><MetricCard label="Scorecard cells" value={summary.scorecards}/><MetricCard label="Open gaps" value={summary.gaps}/><MetricCard label="Actions" value={summary.actions}/><MetricCard label="Alerts" value={summary.alerts}/></section>
+        <Card className="overview-chart-card"><CardHeader><div><CardTitle>Decision workload</CardTitle><p className="muted">Current published records. Use the module pages to inspect freshness and evidence.</p></div></CardHeader><OverviewChart data={[{ label: "Scorecards", value: summary.scorecards }, { label: "Gaps", value: summary.gaps }, { label: "Actions", value: summary.actions }, { label: "Alerts", value: summary.alerts }]} /></Card>
+      </>}
     </>
   );
 }
 
-function Card({ label, value }: { label: string; value: number }) {
-  return <article className="card"><span>{label}</span><strong>{value}</strong></article>;
+function MetricCard({ label, value }: { label: string; value: number }) {
+  return <Card className="metric-card"><span>{label}</span><strong>{value}</strong></Card>;
 }
