@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from dataclasses import dataclass
 
 import httpx
@@ -122,7 +123,12 @@ class GoogleAdsClient:
             },
         )
         self._raise_for_status(response, "OAuth token")
-        payload = response.json()
+        try:
+            payload = response.json()
+        except (json.JSONDecodeError, ValueError) as error:
+            raise GoogleAdsMalformedResponseError(
+                "Google OAuth response was not valid JSON"
+            ) from error
         token = payload.get("access_token") if isinstance(payload, dict) else None
         if not isinstance(token, str) or not token:
             raise GoogleAdsMalformedResponseError(
@@ -149,6 +155,18 @@ class GoogleAdsClient:
         )
         self._raise_for_status(response, "Google Ads search")
         body = response.content
+        try:
+            payload = json.loads(body)
+        except (json.JSONDecodeError, ValueError) as error:
+            raise GoogleAdsMalformedResponseError(
+                "Google Ads search response was not valid JSON"
+            ) from error
+        if not isinstance(payload, list) or not payload or not all(
+            isinstance(chunk, dict) for chunk in payload
+        ):
+            raise GoogleAdsMalformedResponseError(
+                "Google Ads search response had an invalid shape"
+            )
         return (
             RawSourcePage(
                 source=SOURCE_TYPE,

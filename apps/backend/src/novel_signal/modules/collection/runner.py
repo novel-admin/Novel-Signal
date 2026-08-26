@@ -35,9 +35,15 @@ from novel_signal.modules.collection.service import (
     utc_now,
 )
 
-register_executor("amazon_in", CollectionJobType.SERP, AmazonSerpExecutor)
-register_executor("amazon_in", CollectionJobType.PRODUCT_DETAIL, AmazonProductExecutor)
-register_executor("google", CollectionJobType.SERP, GoogleSerpExecutor)
+
+def register_builtin_executors() -> None:
+    """Register built-ins after import or a test/runtime registry reset."""
+    register_executor("amazon_in", CollectionJobType.SERP, AmazonSerpExecutor)
+    register_executor("amazon_in", CollectionJobType.PRODUCT_DETAIL, AmazonProductExecutor)
+    register_executor("google", CollectionJobType.SERP, GoogleSerpExecutor)
+
+
+register_builtin_executors()
 
 
 @dataclass(frozen=True)

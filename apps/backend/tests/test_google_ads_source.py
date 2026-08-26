@@ -7,6 +7,7 @@ from novel_signal.sources.google.ads_api import (
     GoogleAdsClient,
     GoogleAdsConfig,
     GoogleAdsConfigurationError,
+    GoogleAdsMalformedResponseError,
     GoogleAdsPermissionError,
 )
 
@@ -66,4 +67,25 @@ async def test_google_ads_requires_configuration_and_maps_permission_failure() -
 
     async with GoogleAdsClient(config(), transport=httpx.MockTransport(handler)) as source:
         with pytest.raises(GoogleAdsPermissionError):
+            await source.verify_connection()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("body", [b"", b"not-json", b"{}", b"[]"])
+async def test_google_ads_rejects_malformed_success_response(body: bytes) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.host == "oauth.test":
+            return httpx.Response(200, json={"access_token": "access-token"})
+        return httpx.Response(200, content=body)
+
+    async with GoogleAdsClient(config(), transport=httpx.MockTransport(handler)) as source:
+        with pytest.raises(GoogleAdsMalformedResponseError):
+            await source.verify_connection()
+
+
+@pytest.mark.asyncio
+async def test_google_ads_maps_malformed_oauth_response() -> None:
+    transport = httpx.MockTransport(lambda _: httpx.Response(200, content=b"not-json"))
+    async with GoogleAdsClient(config(), transport=transport) as source:
+        with pytest.raises(GoogleAdsMalformedResponseError):
             await source.verify_connection()

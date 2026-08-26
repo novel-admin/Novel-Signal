@@ -15,6 +15,7 @@ from novel_signal.modules.collection.execution import (
     unregister_executor,
 )
 from novel_signal.modules.collection.models import CollectionFailureType, CollectionJobType
+from novel_signal.modules.collection.runner import register_builtin_executors
 
 
 class FakeExecutor:
@@ -53,3 +54,8 @@ def test_executor_registry_and_async_boundary() -> None:
     assert raised.value.code == "executor_not_registered"
     assert raised.value.retryable is False
     assert raised.value.failure_type is CollectionFailureType.UNKNOWN
+
+
+def test_builtin_executors_can_be_restored_after_registry_reset() -> None:
+    register_builtin_executors()
+    assert get_executor("amazon_in", CollectionJobType.SERP) is not None
