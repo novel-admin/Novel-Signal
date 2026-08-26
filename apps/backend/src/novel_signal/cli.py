@@ -10,9 +10,11 @@ import sys
 import uuid
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
+from typing import Any
 
 from sqlalchemy import Enum as SAEnum
 from sqlalchemy import String, update
+from sqlalchemy.orm import Session
 from sqlalchemy.sql.sqltypes import JSON as JSONType
 
 from novel_signal.config import get_settings
@@ -60,7 +62,7 @@ from novel_signal.modules.universe.models import (
 )
 
 
-def _demo_value(column, table_name: str, row_number: int, ids: dict[str, object]) -> object:
+def _demo_value(column: Any, table_name: str, row_number: int, ids: dict[str, object]) -> object:
     """Return a safe, schema-valid value for a single demo row."""
     name = column.name
     lowered = name.lower()
@@ -143,7 +145,7 @@ def _demo_value(column, table_name: str, row_number: int, ids: dict[str, object]
     return f"demo-{lowered}-{row_number}"
 
 
-def _seed_all_empty_tables(session) -> int:
+def _seed_all_empty_tables(session: Session) -> int:
     """Populate empty backend tables so every implemented API has demo data."""
     seeded = 0
     ids: dict[str, object] = {}
@@ -183,7 +185,7 @@ def _seed_all_empty_tables(session) -> int:
     return seeded
 
 
-def _repair_demo_contracts(session) -> None:
+def _repair_demo_contracts(session: Session) -> None:
     """Make legacy demo fixtures match the public API and evidence contracts."""
     raw = session.query(collection_models.RawEvidence).first()
     parser = session.query(collection_models.ParserVersion).first()
