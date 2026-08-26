@@ -6,7 +6,8 @@ import { request } from "@novel-signal/api-client";
 export function AuthGate({ children }: { children: React.ReactNode }) {
   const [ready, setReady] = useState(false);
   const [authenticated, setAuthenticated] = useState(false);
-  const [code, setCode] = useState("");
+  const [email, setEmail] = useState("demo@demo.com");
+  const [password, setPassword] = useState("demo123");
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -19,10 +20,10 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
     event.preventDefault();
     setError(null);
     try {
-      await request("/auth/login", { method: "POST", body: { code } });
+      await request("/auth/login", { method: "POST", body: { email, password } });
       setAuthenticated(true);
     } catch {
-      setError("Invalid access code.");
+      setError("Invalid email or password.");
     }
   }
 
@@ -31,10 +32,12 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
   return <main className="content auth-panel">
     <div className="eyebrow">Novel Signal</div>
     <h1>Dashboard access</h1>
-    <p className="lede">Enter the demo access code to continue.</p>
+    <p className="lede">Sign in with the account configured by your workspace administrator.</p>
     <form onSubmit={submit} className="auth-form">
-      <label htmlFor="dashboard-code">Access code</label>
-      <input id="dashboard-code" type="password" value={code} onChange={(event) => setCode(event.target.value)} autoComplete="current-password" required />
+      <label htmlFor="dashboard-email">Email</label>
+      <input id="dashboard-email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="email" required />
+      <label htmlFor="dashboard-password">Password</label>
+      <input id="dashboard-password" type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="current-password" required />
       {error ? <div className="state state-error" role="alert">{error}</div> : null}
       <button className="button primary" type="submit">Enter dashboard</button>
     </form>
