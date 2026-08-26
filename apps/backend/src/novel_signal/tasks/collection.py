@@ -4,6 +4,7 @@ import socket
 import uuid
 from typing import Any
 
+from novel_signal.collectors.amazon_in.executor import AmazonPublicExecutor
 from novel_signal.db import SessionLocal
 from novel_signal.modules.collection.amazon_product_executor import AmazonProductExecutor
 from novel_signal.modules.collection.amazon_serp_executor import AmazonSerpExecutor

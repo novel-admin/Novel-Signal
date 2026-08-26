@@ -19,6 +19,7 @@ class CollectionWorkItem:
     product_id: uuid.UUID | None
     competitor_product_id: uuid.UUID | None
     tracking_target_id: uuid.UUID | None
+    attempt_id: uuid.UUID | None = None
 
 
 @dataclass(frozen=True)

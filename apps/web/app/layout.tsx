@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import "./globals.css";
+import { AuthGate } from "../components/AuthGate";
 
 export const metadata: Metadata = {
   title: "Novel Signal",
@@ -16,7 +17,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
   return (
     <html lang="en">
       <body>
-        <div className="shell">
+        <AuthGate><div className="shell">
           <aside className="sidebar">
             <div className="brand">Novel Signal</div>
             <nav className="nav">
@@ -27,7 +28,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
             </nav>
           </aside>
           <main className="content">{children}</main>
-        </div>
+        </div></AuthGate>
       </body>
     </html>
   );

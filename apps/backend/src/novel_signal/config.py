@@ -1,6 +1,6 @@
 from functools import lru_cache
 
-from pydantic import SecretStr
+from pydantic import SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -11,6 +11,9 @@ class Settings(BaseSettings):
     app_name: str = "Novel Signal API"
     api_v1_prefix: str = "/api/v1"
     internal_auth_secret: SecretStr = SecretStr("change-me")
+    dashboard_access_code: SecretStr = SecretStr("")
+    dashboard_auth_cookie: str = "novel_signal_dashboard"
+    cors_origins: str = "http://localhost:3000"
     database_url: str = "postgresql+psycopg://novel_signal:novel_signal@localhost:5432/novel_signal"
     redis_url: str = "redis://localhost:6379/0"
     object_store_endpoint: str = "http://localhost:9000"
@@ -60,6 +63,15 @@ class Settings(BaseSettings):
     meta_access_token: SecretStr = SecretStr("")
     meta_ad_account_ids: str = ""
     meta_ad_library_access_token: SecretStr = SecretStr("")
+
+    @field_validator("database_url", mode="after")
+    @classmethod
+    def use_installed_postgres_driver(cls, value: str) -> str:
+        if value.startswith("postgres://"):
+            return "postgresql+psycopg://" + value[len("postgres://") :]
+        if value.startswith("postgresql://"):
+            return "postgresql+psycopg://" + value[len("postgresql://") :]
+        return value
 
 
 @lru_cache

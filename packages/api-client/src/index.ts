@@ -36,6 +36,7 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
   const { body, token, headers, ...init } = options;
   const response = await fetch(`${apiBaseUrl}${path}`, {
     ...init,
+    credentials: "include",
     headers: {
       Accept: "application/json",
       ...(body === undefined ? {} : { "Content-Type": "application/json" }),
