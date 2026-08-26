@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from novel_signal.config import get_settings
 from novel_signal.db import get_db
 
-from .service import access_token, authenticate, is_authenticated
+from .service import access_token, authenticate, is_authenticated, token_subject
 
 router = APIRouter(prefix="/auth", tags=["authentication"])
 
@@ -59,7 +59,7 @@ def session(request: Request) -> dict[str, bool | str | None]:
     authenticated = is_authenticated(token, settings)
     return {
         "authenticated": authenticated,
-        "email": None,
+        "email": token_subject(token) if authenticated else None,
     }
 
 

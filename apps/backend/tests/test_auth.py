@@ -19,6 +19,11 @@ def test_dashboard_access_requires_login(monkeypatch) -> None:
     client = TestClient(app)
     assert client.get("/api/v1/universe/meta").status_code == 401
     assert client.post("/api/v1/auth/login", json={"code": "wrong"}).status_code == 401
-    assert client.post("/api/v1/auth/login", json={"code": "demo-code"}).status_code == 200
+    login = client.post("/api/v1/auth/login", json={"code": "demo-code"})
+    assert login.status_code == 200
+    assert client.get("/api/v1/auth/session").json() == {
+        "authenticated": True,
+        "email": "legacy",
+    }
     assert client.get("/api/v1/universe/meta").status_code == 200
     get_settings.cache_clear()
