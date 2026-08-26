@@ -2,12 +2,13 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { WorkEmpty, WorkError, WorkLoading } from "../../components/WorkStates";
+import { apiBaseUrl } from "@novel-signal/api-client";
 
 type Source = { source_type: string; owner: string; purpose: string; configured: boolean };
 type Readiness = { status: string; postgres: Item; redis: Item; object_store: Item; celery: Item };
 type Item = { status: string; detail: string | null };
 
-const api = "/api/v1";
+const api = apiBaseUrl;
 
 function sourceLabel(value: string) {
   return value.replaceAll("_", " ");

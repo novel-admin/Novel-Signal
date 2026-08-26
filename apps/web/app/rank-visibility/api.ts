@@ -1,8 +1,9 @@
 import type { AmazonShareOfVoice, BadgeEvent, BrandPresence, Capture, CaptureDetail, GoogleDomainComparison, KeywordCoverageSummary, KeywordGapAnalysis, KeywordOption, ListResponse, NewEntrant, RankHistory, ReverseAsinIntelligence, Visibility } from "./types";
+import { apiBaseUrl } from "@novel-signal/api-client";
 
 // Keep browser traffic same-origin. Next.js proxies /api locally and deployments can route the
 // same path without exposing a backend host in the client bundle.
-const base = "/api/v1";
+const base = apiBaseUrl;
 
 function errorMessage(body: unknown, status: number) {
   if (body && typeof body === "object" && "detail" in body) {
