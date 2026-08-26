@@ -135,16 +135,20 @@ def test_planner_deduplicates_serp_and_product_jobs(engine: Engine) -> None:
         first = CollectionPlanningService(session).plan_due(at=at)
         session.commit()
 
-        assert first.created == 3
+        assert first.created == 4
         assert first.existing == 0
-        assert sum(job.job_type is CollectionJobType.SERP for job in first.jobs) == 1
+        assert sum(job.job_type is CollectionJobType.SERP for job in first.jobs) == 2
+        assert {job.platform for job in first.jobs if job.job_type is CollectionJobType.SERP} == {
+            "amazon_in",
+            "google",
+        }
         assert sum(job.job_type is CollectionJobType.PRODUCT_DETAIL for job in first.jobs) == 2
 
         second = CollectionPlanningService(session).plan_due(at=at)
         session.commit()
         assert second.created == 0
-        assert second.existing == 3
-        assert session.query(CollectionJob).count() == 3
+        assert second.existing == 4
+        assert session.query(CollectionJob).count() == 4
 
 
 def test_planner_uses_four_hour_serp_and_hourly_product_slots(engine: Engine) -> None:
@@ -160,12 +164,12 @@ def test_planner_uses_four_hour_serp_and_hourly_product_slots(engine: Engine) ->
         one_hour_later = CollectionPlanningService(session).plan_due(at=second_at)
         session.commit()
         assert one_hour_later.created == 2
-        assert one_hour_later.existing == 1
+        assert one_hour_later.existing == 2
 
         four_hours_later = CollectionPlanningService(session).plan_due(at=fourth_hour)
         session.commit()
-        assert four_hours_later.created == 3
-        assert session.query(CollectionJob).count() == 8
+        assert four_hours_later.created == 4
+        assert session.query(CollectionJob).count() == 10
 
 
 def test_disabled_target_does_not_create_serp_job(engine: Engine) -> None:

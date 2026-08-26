@@ -9,6 +9,7 @@ from novel_signal.db import Base
 from novel_signal.modules.collection.amazon_product_executor import AmazonProductExecutor
 from novel_signal.modules.collection.amazon_serp_executor import AmazonSerpExecutor
 from novel_signal.modules.collection.execution import get_executor
+from novel_signal.modules.collection.google_serp_executor import GoogleSerpExecutor
 from novel_signal.modules.collection.models import (
     CollectionJob,
     CollectionJobStatus,
@@ -109,6 +110,7 @@ def _seed(session: Session) -> tuple[Keyword, Product, CompetitorProduct]:
 def test_week2_planning_dispatch_registry_and_lifecycle_acceptance(engine: Engine) -> None:
     importlib.reload(collection_tasks)  # Worker-module load performs normal registration.
     assert isinstance(get_executor("amazon_in", CollectionJobType.SERP), AmazonSerpExecutor)
+    assert isinstance(get_executor("google", CollectionJobType.SERP), GoogleSerpExecutor)
     assert isinstance(
         get_executor("amazon_in", CollectionJobType.PRODUCT_DETAIL), AmazonProductExecutor
     )
@@ -119,20 +121,35 @@ def test_week2_planning_dispatch_registry_and_lifecycle_acceptance(engine: Engin
         first = planner.plan_due(at=NOW)
         session.commit()
 
-        assert first.created == 3
+        assert first.created == 4
         assert first.existing == 0
         jobs = {
-            job.job_type.value
+            job.platform
+            + ":"
+            + job.job_type.value
             + ":"
             + str(job.keyword_id or job.product_id or job.competitor_product_id): job
             for job in first.jobs
         }
-        serp = jobs[f"serp:{keyword.id}"]
-        owned = jobs[f"product_detail:{product.id}"]
-        competitor = jobs[f"product_detail:{competitor_product.id}"]
-        assert serp.platform == "amazon_in"
-        assert serp.source_tier is CollectionSourceTier.PUBLIC_PAGE
-        assert serp.scheduled_for == serp.not_before == datetime(2026, 8, 31, 8, tzinfo=UTC)
+        amazon_serp = jobs[f"amazon_in:serp:{keyword.id}"]
+        google_serp = jobs[f"google:serp:{keyword.id}"]
+        owned = jobs[f"amazon_in:product_detail:{product.id}"]
+        competitor = jobs[f"amazon_in:product_detail:{competitor_product.id}"]
+        assert amazon_serp.platform == "amazon_in"
+        assert google_serp.platform == "google"
+        assert google_serp.product_id is google_serp.competitor_product_id is None
+        assert amazon_serp.source_tier is CollectionSourceTier.PUBLIC_PAGE
+        assert google_serp.source_tier is CollectionSourceTier.PUBLIC_PAGE
+        assert (
+            amazon_serp.scheduled_for
+            == amazon_serp.not_before
+            == datetime(2026, 8, 31, 8, tzinfo=UTC)
+        )
+        assert (
+            google_serp.scheduled_for
+            == google_serp.not_before
+            == datetime(2026, 8, 31, 8, tzinfo=UTC)
+        )
         assert owned.product_id == product.id and owned.competitor_product_id is None
         assert (
             competitor.competitor_product_id == competitor_product.id
@@ -142,14 +159,19 @@ def test_week2_planning_dispatch_registry_and_lifecycle_acceptance(engine: Engin
         replay = planner.plan_due(at=NOW)
         session.commit()
         assert replay.created == 0
-        assert replay.existing == 3
-        assert len(session.scalars(select(CollectionJob)).all()) == 3
+        assert replay.existing == 4
+        assert len(session.scalars(select(CollectionJob)).all()) == 4
 
         pending = CollectionRepository(session).pending_dispatch_jobs(now=NOW)
-        assert {job.id for job in pending} == {serp.id, owned.id, competitor.id}
+        assert {job.id for job in pending} == {
+            amazon_serp.id,
+            google_serp.id,
+            owned.id,
+            competitor.id,
+        }
 
         lifecycle = CollectionLifecycleService(session)
-        for job in (serp, owned, competitor):
+        for job in (amazon_serp, google_serp, owned, competitor):
             claim = lifecycle.claim_attempt(job.id, at=NOW)
             assert claim is not None
             assert claim.job.status is CollectionJobStatus.RUNNING

@@ -172,6 +172,109 @@ class SerpResult(Base):
     capture: Mapped[SerpCapture] = relationship(back_populates="results")
 
 
+class GoogleSerpCapture(Base):
+    """One immutable normalized Google organic SERP observation."""
+
+    __tablename__ = "google_serp_captures"
+    __table_args__ = (
+        CheckConstraint("length(trim(geo_code)) > 0", name="geo_code_not_blank"),
+        CheckConstraint("page_number > 0", name="page_number_positive"),
+        CheckConstraint("result_count >= 0", name="result_count_nonnegative"),
+        UniqueConstraint("ingestion_key", name="uq_google_serp_captures_ingestion_key"),
+        UniqueConstraint(
+            "raw_evidence_id",
+            "parser_version_id",
+            name="uq_google_serp_captures_evidence_parser",
+        ),
+        Index("ix_google_serp_captures_keyword_captured", "keyword_id", "captured_at"),
+        Index(
+            "ix_google_serp_captures_context_captured",
+            "keyword_id",
+            "geo_code",
+            "device_profile",
+            "captured_at",
+        ),
+        Index("ix_google_serp_captures_raw_evidence_id", "raw_evidence_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    keyword_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("keywords.id", ondelete="RESTRICT"), nullable=False
+    )
+    geo_code: Mapped[str] = mapped_column(String(50), nullable=False)
+    device_profile: Mapped[DeviceProfile] = mapped_column(
+        enum_column(DeviceProfile, "device_profile"), nullable=False
+    )
+    captured_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    source_job_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("collection_jobs.id", ondelete="RESTRICT"), nullable=False
+    )
+    raw_evidence_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("raw_evidence.id", ondelete="RESTRICT"), nullable=False
+    )
+    parser_version_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("parser_versions.id", ondelete="RESTRICT"), nullable=False
+    )
+    parser_version: Mapped[str] = mapped_column(String(100), nullable=False)
+    ingestion_key: Mapped[str] = mapped_column(String(255), nullable=False)
+    page_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    result_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    capture_metadata: Mapped[dict[str, object] | None] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    results: Mapped[list[GoogleSerpResult]] = relationship(
+        back_populates="capture",
+        cascade="all, delete-orphan",
+        order_by="GoogleSerpResult.absolute_position",
+    )
+
+
+class GoogleSerpResult(Base):
+    """A safe public organic destination observed in a Google capture."""
+
+    __tablename__ = "google_serp_results"
+    __table_args__ = (
+        CheckConstraint("absolute_position > 0", name="absolute_position_positive"),
+        CheckConstraint("page_number > 0", name="page_number_positive"),
+        CheckConstraint("length(trim(result_type)) > 0", name="result_type_not_blank"),
+        CheckConstraint("length(trim(title)) > 0", name="title_not_blank"),
+        CheckConstraint("length(trim(url)) > 0", name="url_not_blank"),
+        CheckConstraint("length(trim(displayed_domain)) > 0", name="displayed_domain_not_blank"),
+        CheckConstraint(
+            "identity_match IS NULL OR identity_match IN ('novel', 'competitor')",
+            name="identity_match_valid",
+        ),
+        UniqueConstraint(
+            "capture_id", "absolute_position", name="uq_google_serp_results_capture_position"
+        ),
+        Index("ix_google_serp_results_capture_id", "capture_id"),
+        Index("ix_google_serp_results_domain", "displayed_domain"),
+        Index("ix_google_serp_results_identity_domain", "identity_domain"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    capture_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("google_serp_captures.id", ondelete="CASCADE"), nullable=False
+    )
+    absolute_position: Mapped[int] = mapped_column(Integer, nullable=False)
+    page_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    result_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    title: Mapped[str] = mapped_column(String(1000), nullable=False)
+    url: Mapped[str] = mapped_column(String(2048), nullable=False)
+    displayed_domain: Mapped[str] = mapped_column(String(255), nullable=False)
+    snippet: Mapped[str | None] = mapped_column(String(2000))
+    identity_match: Mapped[str | None] = mapped_column(String(20))
+    identity_domain: Mapped[str | None] = mapped_column(String(255))
+    result_metadata: Mapped[dict[str, object] | None] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    capture: Mapped[GoogleSerpCapture] = relationship(back_populates="results")
+
+
 class BadgeEvent(Base):
     __tablename__ = "badge_events"
     __table_args__ = (

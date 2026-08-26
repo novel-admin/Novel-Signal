@@ -13,6 +13,7 @@ from novel_signal.modules.collection.execution import (
     get_executor,
     register_executor,
 )
+from novel_signal.modules.collection.google_serp_executor import GoogleSerpExecutor
 from novel_signal.modules.collection.models import (
     CollectionFailureType,
     CollectionJobType,
@@ -29,6 +30,7 @@ from novel_signal.tasks.celery_app import celery_app
 
 register_executor("amazon_in", CollectionJobType.SERP, AmazonSerpExecutor)
 register_executor("amazon_in", CollectionJobType.PRODUCT_DETAIL, AmazonProductExecutor)
+register_executor("google", CollectionJobType.SERP, GoogleSerpExecutor)
 
 
 def _worker_id(task: Any) -> str:
