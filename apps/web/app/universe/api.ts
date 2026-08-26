@@ -9,7 +9,7 @@ import type {
   UniverseData,
 } from "./types";
 
-const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL ?? "/api/v1";
+import { apiBaseUrl } from "@novel-signal/api-client";
 
 function errorMessage(body: unknown, status: number): string {
   if (typeof body === "object" && body !== null && "detail" in body) {

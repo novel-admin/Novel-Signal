@@ -35,14 +35,18 @@ def login(
         login_email = user.email if user else ""
     if not login_email:
         return JSONResponse(status_code=401, content={"detail": "Invalid email or password"})
-    secure = request.url.scheme == "https"
-    response = JSONResponse({"authenticated": True})
+    # Render terminates TLS before forwarding to the app.  Use the deployment
+    # environment as the source of truth so the browser does not silently
+    # reject the cross-origin session cookie when proxy headers are absent.
+    secure = request.url.scheme == "https" or settings.app_env not in {"development", "test"}
+    response = JSONResponse({"authenticated": True, "token": access_token(settings, login_email)})
     response.set_cookie(
         settings.dashboard_auth_cookie,
         access_token(settings, login_email),
         httponly=True,
         secure=secure,
         samesite="none" if secure else "lax",
+        path="/",
         max_age=60 * 60 * 24 * 7,
     )
     return response

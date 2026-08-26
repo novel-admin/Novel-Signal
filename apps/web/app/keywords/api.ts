@@ -1,5 +1,6 @@
 import type { CsvResult, Keyword, ListResponse, ProductOption, TrackingTarget } from "./types";
-const base = process.env.NEXT_PUBLIC_API_URL ?? "/api/v1";
+import { apiBaseUrl } from "@novel-signal/api-client";
+const base = apiBaseUrl;
 function message(body:unknown,status:number){if(body&&typeof body==="object"&&"detail" in body){const d=(body as {detail:unknown}).detail;if(d&&typeof d==="object"&&"message" in d)return String((d as {message:unknown}).message);if(Array.isArray(d))return d.map(x=>typeof x==="object"&&x&&"msg" in x?String(x.msg):String(x)).join(" · ");}return `Request failed (${status})`;}
 export async function request<T>(path:string,init?:RequestInit):Promise<T>{const response=await fetch(`${base}${path}`,{...init,credentials:"include",headers:{"Content-Type":"application/json",...init?.headers}});const body:unknown=await response.json().catch(()=>null);if(!response.ok)throw new Error(message(body,response.status));return body as T;}
 export async function load(includeArchived:boolean){const q=includeArchived?"?include_archived=true":"";const [keywords,targets,products,competitorProducts]=await Promise.all([request<ListResponse<Keyword>>(`/keywords${q}`),request<ListResponse<TrackingTarget>>(`/keywords/tracking-targets${q}`),request<ListResponse<ProductOption>>(`/universe/products${q}`),request<ListResponse<ProductOption>>(`/universe/competitor-products${q}`)]);return {keywords:keywords.items,targets:targets.items,products:products.items,competitorProducts:competitorProducts.items};}
