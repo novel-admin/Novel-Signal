@@ -7,4 +7,5 @@ describe("S6 Price Monitoring frontend",()=>{
  it("never formats a missing price as zero",()=>{expect(formatMoney(null)).toBe("Unavailable");expect(formatMoney(undefined)).toBe("Unavailable")});
  it("formats currencies using the observation currency",()=>{expect(formatMoney("499","INR")).toContain("499");expect(formatMoney("12.5","USD")).toContain("12.5")});
  it("formats freshness and movement",()=>{expect(formatFreshness(42)).toBe("42 min ago");expect(formatFreshness(125)).toBe("2 hr ago");expect(formatMovement("-50","INR")).toContain("↓")});
+ it("uses the normalized price-per-unit endpoint and preserves its derived label",()=>{expect(readFileSync("app/price-monitoring/api.ts","utf8")).toContain("price-per-unit");expect(readFileSync("app/price-monitoring/price-monitoring-client.tsx","utf8")).toContain("Derived from measured observations")});
 });
