@@ -261,3 +261,59 @@ def test_increase_staleness_same_and_more_expensive_signals(s6: Context) -> None
         params={"product_id": str(s6.product.id)},
     ).json()["items"]
     assert events[0]["event_type"] == "price_increase"
+
+
+def test_price_per_unit_uses_explicit_equal_units_and_decimal_rounding(s6: Context) -> None:
+    s6.product.pack_quantity = 4
+    s6.product.pack_unit = "Packs"
+    s6.competitor_product.pack_quantity = 3
+    s6.competitor_product.pack_unit = "packs"
+    s6.session.commit()
+    s6.client.post(
+        "/api/v1/price-monitoring/observations",
+        json=payload(price="200", key="ppu-owned"),
+    )
+    s6.client.post(
+        "/api/v1/price-monitoring/observations",
+        json=payload("COMP-S6", price="180", key="ppu-competitor"),
+    )
+    response = s6.client.get(
+        "/api/v1/price-monitoring/price-per-unit",
+        params={
+            "product_id": str(s6.product.id),
+            "competitor_product_id": str(s6.competitor_product.id),
+            "geo_code": "560001",
+        },
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["comparable"] is True and body["unit"] == "packs"
+    assert Decimal(body["owned"]["price_per_unit"]) == Decimal("50.00")
+    assert Decimal(body["competitor"]["price_per_unit"]) == Decimal("60.00")
+    assert Decimal(body["difference"]) == Decimal("-10.00")
+
+
+def test_price_per_unit_does_not_guess_missing_or_incompatible_pack_data(s6: Context) -> None:
+    s6.product.pack_quantity = None
+    s6.product.pack_unit = "packs"
+    s6.competitor_product.pack_quantity = 3
+    s6.competitor_product.pack_unit = "pieces"
+    s6.session.commit()
+    s6.client.post(
+        "/api/v1/price-monitoring/observations",
+        json=payload(price="200", key="ppu-missing-owned"),
+    )
+    s6.client.post(
+        "/api/v1/price-monitoring/observations",
+        json=payload("COMP-S6", price="180", key="ppu-missing-competitor"),
+    )
+    body = s6.client.get(
+        "/api/v1/price-monitoring/price-per-unit",
+        params={
+            "product_id": str(s6.product.id),
+            "competitor_product_id": str(s6.competitor_product.id),
+        },
+    ).json()
+    assert body["comparable"] is False
+    assert body["owned"]["price_per_unit"] is None
+    assert body["unit"] is None and body["difference"] is None

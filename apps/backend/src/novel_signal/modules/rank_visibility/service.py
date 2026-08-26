@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import uuid
 from collections import Counter, defaultdict
+from collections.abc import Callable
 from datetime import datetime
 
 from sqlalchemy.exc import IntegrityError
@@ -24,11 +25,17 @@ from novel_signal.modules.rank_visibility.models import (
 )
 from novel_signal.modules.rank_visibility.repository import RankVisibilityRepository
 from novel_signal.modules.rank_visibility.schemas import (
+    AmazonShareOfVoice,
     BrandPresence,
     BrandPresenceRow,
     CaptureIngest,
+    KeywordGapAnalysis,
+    KeywordGapRow,
     RankHistory,
     RankObservation,
+    ReverseAsinIntelligence,
+    ReverseAsinKeyword,
+    ShareOfVoiceMetric,
     VisibilityMetrics,
 )
 from novel_signal.modules.universe.models import Marketplace
@@ -311,3 +318,215 @@ class RankVisibilityService:
                 )
             )
         return BrandPresence(total_page_1_results=total, brands=brands)
+
+    def reverse_asin(
+        self,
+        *,
+        product_id: uuid.UUID | None,
+        competitor_product_id: uuid.UUID | None,
+        marketplace_product_id: str | None,
+        marketplace: Marketplace | None,
+        geo_code: str | None,
+        device_profile: DeviceProfile | None,
+        from_at: datetime | None,
+        to_at: datetime | None,
+    ) -> ReverseAsinIntelligence:
+        identity = self.validate_identity(product_id, competitor_product_id, marketplace_product_id)
+        rows = self.repository.identity_history(
+            product_id=product_id,
+            competitor_product_id=competitor_product_id,
+            marketplace_product_id=marketplace_product_id,
+            marketplace=marketplace,
+            geo_code=geo_code,
+            device_profile=device_profile,
+            from_at=from_at,
+            to_at=to_at,
+        )
+        grouped: dict[
+            tuple[uuid.UUID, str, DeviceProfile],
+            list[tuple[SerpResult, SerpCapture, object]],
+        ] = defaultdict(list)
+        keyword_names: dict[uuid.UUID, str] = {}
+        for result, capture, keyword in rows:
+            grouped[(capture.keyword_id, capture.geo_code, capture.device_profile)].append(
+                (result, capture, keyword)
+            )
+            keyword_names[capture.keyword_id] = keyword.keyword_text
+        output: list[ReverseAsinKeyword] = []
+        for (keyword_id, _, _), observations in grouped.items():
+            latest_at = max(capture.captured_at for _, capture, _ in observations)
+            latest = [
+                (result, capture)
+                for result, capture, _ in observations
+                if capture.captured_at == latest_at
+            ]
+            best_latest = min(latest, key=lambda row: row[0].absolute_position)
+            organic = [
+                result.within_type_position
+                for result, _ in latest
+                if result.placement_type == PlacementType.ORGANIC
+            ]
+            output.append(
+                ReverseAsinKeyword(
+                    keyword_id=keyword_id,
+                    keyword_text=keyword_names[keyword_id],
+                    latest_position=best_latest[0].absolute_position,
+                    latest_organic_position=min(organic, default=None),
+                    sponsored_present=any(_is_paid(result) for result, _ in latest),
+                    first_observed_at=min(capture.captured_at for _, capture, _ in observations),
+                    latest_observed_at=latest_at,
+                    latest_capture_id=best_latest[1].id,
+                    latest_result_ids=sorted((result.id for result, _ in latest), key=str),
+                    marketplace=best_latest[1].marketplace,
+                    geo_code=best_latest[1].geo_code,
+                    device_profile=best_latest[1].device_profile,
+                    source_job_id=best_latest[1].source_job_id,
+                    parser_version=best_latest[1].parser_version,
+                )
+            )
+        output.sort(key=lambda row: (row.latest_position, row.keyword_text, str(row.keyword_id)))
+        return ReverseAsinIntelligence(
+            identity=identity,
+            keyword_count=len({row.keyword_id for row in output}),
+            context_count=len(output),
+            keywords=output,
+        )
+
+    def share_of_voice(
+        self,
+        *,
+        capture_id: uuid.UUID,
+        brand: str | None,
+        product_id: uuid.UUID | None,
+        competitor_product_id: uuid.UUID | None,
+        marketplace_product_id: str | None,
+    ) -> AmazonShareOfVoice:
+        selectors = [
+            value
+            for value in (brand, product_id, competitor_product_id, marketplace_product_id)
+            if value is not None and str(value).strip()
+        ]
+        if len(selectors) != 1:
+            raise RankVisibilityValidationError(
+                "Provide exactly one of brand, product_id, competitor_product_id, "
+                "or marketplace_product_id"
+            )
+        capture = self.get_capture(capture_id)
+
+        def matches(result: SerpResult) -> bool:
+            if brand is not None:
+                return (result.brand or "").strip().casefold() == brand.strip().casefold()
+            if product_id is not None:
+                return result.product_id == product_id
+            if competitor_product_id is not None:
+                return result.competitor_product_id == competitor_product_id
+            return result.marketplace_product_id == marketplace_product_id
+
+        organic = [row for row in capture.results if row.placement_type == PlacementType.ORGANIC]
+        paid = [row for row in capture.results if _is_paid(row)]
+        eligible = [*organic, *paid]
+        matched = [row for row in eligible if matches(row)]
+        identity = str(selectors[0]).strip()
+        return AmazonShareOfVoice(
+            capture_id=capture.id,
+            keyword_id=capture.keyword_id,
+            captured_at=capture.captured_at,
+            marketplace=capture.marketplace,
+            geo_code=capture.geo_code,
+            device_profile=capture.device_profile,
+            identity=identity,
+            organic=_share(organic, matches),
+            paid=_share(paid, matches),
+            total=_share(eligible, matches),
+            matched_result_ids=sorted((row.id for row in matched), key=str),
+            source_job_id=capture.source_job_id,
+            parser_version=capture.parser_version,
+        )
+
+    def keyword_gaps(
+        self,
+        *,
+        owned_product_id: uuid.UUID,
+        competitor_product_id: uuid.UUID,
+        geo_code: str | None,
+        device_profile: DeviceProfile | None,
+        from_at: datetime | None,
+        to_at: datetime | None,
+    ) -> KeywordGapAnalysis:
+        captures = self.repository.filtered_captures_with_results(
+            marketplace=Marketplace.AMAZON_IN,
+            geo_code=geo_code,
+            device_profile=device_profile,
+            from_at=from_at,
+            to_at=to_at,
+        )
+        latest: dict[tuple[uuid.UUID, str, DeviceProfile], SerpCapture] = {}
+        for capture in captures:
+            latest[(capture.keyword_id, capture.geo_code, capture.device_profile)] = capture
+        gaps: list[KeywordGapRow] = []
+        for capture in latest.values():
+            owned = [row for row in capture.results if row.product_id == owned_product_id]
+            competitor = [
+                row for row in capture.results if row.competitor_product_id == competitor_product_id
+            ]
+            owned_organic = any(row.placement_type == PlacementType.ORGANIC for row in owned)
+            competitor_organic = any(
+                row.placement_type == PlacementType.ORGANIC for row in competitor
+            )
+            owned_paid = any(_is_paid(row) for row in owned)
+            competitor_paid = any(_is_paid(row) for row in competitor)
+            types = []
+            if competitor and not owned:
+                types.append("competitor_present_owned_absent")
+            if competitor_organic and not owned_organic:
+                types.append("owned_organic_gap")
+            if competitor_paid and not owned_paid:
+                types.append("owned_paid_gap")
+            if not types:
+                continue
+            gaps.append(
+                KeywordGapRow(
+                    keyword_id=capture.keyword_id,
+                    capture_id=capture.id,
+                    captured_at=capture.captured_at,
+                    geo_code=capture.geo_code,
+                    device_profile=capture.device_profile,
+                    owned_present=bool(owned),
+                    competitor_present=bool(competitor),
+                    owned_organic_present=owned_organic,
+                    competitor_organic_present=competitor_organic,
+                    owned_paid_present=owned_paid,
+                    competitor_paid_present=competitor_paid,
+                    gap_types=types,
+                    competitor_result_ids=sorted((row.id for row in competitor), key=str),
+                    source_job_id=capture.source_job_id,
+                    parser_version=capture.parser_version,
+                )
+            )
+        gaps.sort(key=lambda row: (row.captured_at, str(row.keyword_id), row.geo_code))
+        return KeywordGapAnalysis(
+            owned_product_id=owned_product_id,
+            competitor_product_id=competitor_product_id,
+            contexts_checked=len(latest),
+            gap_count=len(gaps),
+            gaps=gaps,
+        )
+
+
+def _is_paid(result: SerpResult) -> bool:
+    return result.placement_type in {
+        PlacementType.SPONSORED_PRODUCT,
+        PlacementType.SPONSORED_BRAND,
+        PlacementType.SPONSORED_BRAND_VIDEO,
+        PlacementType.SPONSORED_DISPLAY,
+    }
+
+
+def _share(rows: list[SerpResult], matches: Callable[[SerpResult], bool]) -> ShareOfVoiceMetric:
+    matched = sum(matches(row) for row in rows)
+    total = len(rows)
+    return ShareOfVoiceMetric(
+        matched_slots=matched,
+        eligible_slots=total,
+        share_percent=round(matched / total * 100, 2) if total else 0.0,
+    )

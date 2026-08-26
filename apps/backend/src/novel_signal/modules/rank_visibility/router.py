@@ -19,6 +19,7 @@ from novel_signal.modules.rank_visibility.models import (
 )
 from novel_signal.modules.rank_visibility.repository import RankVisibilityRepository
 from novel_signal.modules.rank_visibility.schemas import (
+    AmazonShareOfVoice,
     BadgeEventList,
     BadgeEventRead,
     BrandPresence,
@@ -26,9 +27,11 @@ from novel_signal.modules.rank_visibility.schemas import (
     CaptureIngest,
     CaptureList,
     CaptureSummary,
+    KeywordGapAnalysis,
     NewEntrantList,
     NewEntrantRead,
     RankHistory,
+    ReverseAsinIntelligence,
     VisibilityMetrics,
 )
 from novel_signal.modules.rank_visibility.service import RankVisibilityService
@@ -194,6 +197,74 @@ def brand_presence(
     return execute(
         lambda: service.brand_presence(
             capture_id=capture_id, keyword_id=keyword_id, from_at=from_at, to_at=to_at
+        )
+    )
+
+
+@router.get("/reverse-asin", response_model=ReverseAsinIntelligence)
+def reverse_asin(
+    service: ServiceDep,
+    product_id: uuid.UUID | None = None,
+    competitor_product_id: uuid.UUID | None = None,
+    marketplace_product_id: str | None = None,
+    marketplace: Marketplace | None = Marketplace.AMAZON_IN,
+    geo_code: str | None = None,
+    device_profile: DeviceProfile | None = None,
+    from_at: FromDate = None,
+    to_at: ToDate = None,
+) -> ReverseAsinIntelligence:
+    return execute(
+        lambda: service.reverse_asin(
+            product_id=product_id,
+            competitor_product_id=competitor_product_id,
+            marketplace_product_id=marketplace_product_id,
+            marketplace=marketplace,
+            geo_code=geo_code,
+            device_profile=device_profile,
+            from_at=from_at,
+            to_at=to_at,
+        )
+    )
+
+
+@router.get("/amazon-share-of-voice", response_model=AmazonShareOfVoice)
+def amazon_share_of_voice(
+    service: ServiceDep,
+    capture_id: uuid.UUID,
+    brand: str | None = None,
+    product_id: uuid.UUID | None = None,
+    competitor_product_id: uuid.UUID | None = None,
+    marketplace_product_id: str | None = None,
+) -> AmazonShareOfVoice:
+    return execute(
+        lambda: service.share_of_voice(
+            capture_id=capture_id,
+            brand=brand,
+            product_id=product_id,
+            competitor_product_id=competitor_product_id,
+            marketplace_product_id=marketplace_product_id,
+        )
+    )
+
+
+@router.get("/keyword-gaps", response_model=KeywordGapAnalysis)
+def keyword_gaps(
+    service: ServiceDep,
+    owned_product_id: uuid.UUID,
+    competitor_product_id: uuid.UUID,
+    geo_code: str | None = None,
+    device_profile: DeviceProfile | None = None,
+    from_at: FromDate = None,
+    to_at: ToDate = None,
+) -> KeywordGapAnalysis:
+    return execute(
+        lambda: service.keyword_gaps(
+            owned_product_id=owned_product_id,
+            competitor_product_id=competitor_product_id,
+            geo_code=geo_code,
+            device_profile=device_profile,
+            from_at=from_at,
+            to_at=to_at,
         )
     )
 

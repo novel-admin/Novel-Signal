@@ -170,6 +170,78 @@ class BrandPresence(BaseModel):
     brands: list[BrandPresenceRow]
 
 
+class ReverseAsinKeyword(BaseModel):
+    keyword_id: uuid.UUID
+    keyword_text: str
+    latest_position: int
+    latest_organic_position: int | None
+    sponsored_present: bool
+    first_observed_at: datetime
+    latest_observed_at: datetime
+    latest_capture_id: uuid.UUID
+    latest_result_ids: list[uuid.UUID]
+    marketplace: Marketplace
+    geo_code: str
+    device_profile: DeviceProfile
+    source_job_id: str | None
+    parser_version: str | None
+
+
+class ReverseAsinIntelligence(BaseModel):
+    identity: str
+    keyword_count: int
+    context_count: int
+    keywords: list[ReverseAsinKeyword]
+
+
+class ShareOfVoiceMetric(BaseModel):
+    matched_slots: int
+    eligible_slots: int
+    share_percent: float
+
+
+class AmazonShareOfVoice(BaseModel):
+    capture_id: uuid.UUID
+    keyword_id: uuid.UUID
+    captured_at: datetime
+    marketplace: Marketplace
+    geo_code: str
+    device_profile: DeviceProfile
+    identity: str
+    organic: ShareOfVoiceMetric
+    paid: ShareOfVoiceMetric
+    total: ShareOfVoiceMetric
+    matched_result_ids: list[uuid.UUID]
+    source_job_id: str | None
+    parser_version: str | None
+
+
+class KeywordGapRow(BaseModel):
+    keyword_id: uuid.UUID
+    capture_id: uuid.UUID
+    captured_at: datetime
+    geo_code: str
+    device_profile: DeviceProfile
+    owned_present: bool
+    competitor_present: bool
+    owned_organic_present: bool
+    competitor_organic_present: bool
+    owned_paid_present: bool
+    competitor_paid_present: bool
+    gap_types: list[str]
+    competitor_result_ids: list[uuid.UUID]
+    source_job_id: str | None
+    parser_version: str | None
+
+
+class KeywordGapAnalysis(BaseModel):
+    owned_product_id: uuid.UUID
+    competitor_product_id: uuid.UUID
+    contexts_checked: int
+    gap_count: int
+    gaps: list[KeywordGapRow]
+
+
 class BadgeEventRead(ReadModel):
     id: uuid.UUID
     keyword_id: uuid.UUID

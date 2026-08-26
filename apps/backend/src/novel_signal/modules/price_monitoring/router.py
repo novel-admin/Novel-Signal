@@ -25,6 +25,7 @@ from novel_signal.modules.price_monitoring.schemas import (
     PriceObservationIn,
     PriceObservationList,
     PriceObservationRead,
+    PricePerUnitComparison,
     SellerOfferRead,
 )
 from novel_signal.modules.price_monitoring.service import PriceService
@@ -133,6 +134,16 @@ def latest(
     return LatestPrice(
         observation=PriceObservationRead.model_validate(item), freshness=s.freshness(item)
     )
+
+
+@router.get("/price-per-unit", response_model=PricePerUnitComparison)
+def price_per_unit(
+    s: ServiceDep,
+    product_id: uuid.UUID,
+    competitor_product_id: uuid.UUID,
+    geo_code: str | None = None,
+) -> PricePerUnitComparison:
+    return execute(lambda: s.price_per_unit_comparison(product_id, competitor_product_id, geo_code))
 
 
 @router.get("/history", response_model=PriceHistoryList)

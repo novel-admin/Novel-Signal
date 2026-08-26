@@ -6,6 +6,7 @@ from datetime import datetime
 from sqlalchemy import Select, func, select
 from sqlalchemy.orm import Session, selectinload
 
+from novel_signal.modules.keywords.models import Keyword
 from novel_signal.modules.rank_visibility.models import (
     BadgeEvent,
     BadgeEventType,
@@ -159,11 +160,79 @@ class RankVisibilityRepository:
         if to_at:
             conditions.append(SerpCapture.captured_at <= to_at)
         rows = self.session.execute(
-            query.where(*conditions).order_by(
-                SerpCapture.captured_at, SerpResult.absolute_position
-            )
+            query.where(*conditions).order_by(SerpCapture.captured_at, SerpResult.absolute_position)
         ).all()
         return [(result, capture) for result, capture in rows]
+
+    def identity_history(
+        self,
+        *,
+        product_id: uuid.UUID | None,
+        competitor_product_id: uuid.UUID | None,
+        marketplace_product_id: str | None,
+        marketplace: Marketplace | None,
+        geo_code: str | None,
+        device_profile: DeviceProfile | None,
+        from_at: datetime | None,
+        to_at: datetime | None,
+    ) -> list[tuple[SerpResult, SerpCapture, Keyword]]:
+        query = (
+            select(SerpResult, SerpCapture, Keyword)
+            .select_from(SerpResult)
+            .join(SerpCapture, SerpCapture.id == SerpResult.capture_id)
+            .join(Keyword, Keyword.id == SerpCapture.keyword_id)
+        )
+        conditions = []
+        if product_id:
+            conditions.append(SerpResult.product_id == product_id)
+        elif competitor_product_id:
+            conditions.append(SerpResult.competitor_product_id == competitor_product_id)
+        else:
+            conditions.append(SerpResult.marketplace_product_id == marketplace_product_id)
+        if marketplace:
+            conditions.append(SerpCapture.marketplace == marketplace)
+        if geo_code:
+            conditions.append(SerpCapture.geo_code == geo_code)
+        if device_profile:
+            conditions.append(SerpCapture.device_profile == device_profile)
+        if from_at:
+            conditions.append(SerpCapture.captured_at >= from_at)
+        if to_at:
+            conditions.append(SerpCapture.captured_at <= to_at)
+        return [
+            (result, capture, keyword)
+            for result, capture, keyword in self.session.execute(
+                query.where(*conditions).order_by(
+                    SerpCapture.captured_at, SerpResult.absolute_position
+                )
+            ).all()
+        ]
+
+    def filtered_captures_with_results(
+        self,
+        *,
+        marketplace: Marketplace,
+        geo_code: str | None,
+        device_profile: DeviceProfile | None,
+        from_at: datetime | None,
+        to_at: datetime | None,
+    ) -> list[SerpCapture]:
+        query = (
+            select(SerpCapture)
+            .options(selectinload(SerpCapture.results))
+            .where(SerpCapture.marketplace == marketplace)
+        )
+        if geo_code:
+            query = query.where(SerpCapture.geo_code == geo_code)
+        if device_profile:
+            query = query.where(SerpCapture.device_profile == device_profile)
+        if from_at:
+            query = query.where(SerpCapture.captured_at >= from_at)
+        if to_at:
+            query = query.where(SerpCapture.captured_at <= to_at)
+        return list(
+            self.session.scalars(query.order_by(SerpCapture.captured_at, SerpCapture.id)).unique()
+        )
 
     def brand_results(
         self,
