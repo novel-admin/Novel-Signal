@@ -40,7 +40,10 @@ async def dashboard_access_middleware(
         f"{settings.api_v1_prefix}/auth/logout",
     }
     if (
-        settings.dashboard_access_code.get_secret_value()
+        (
+            settings.app_env not in {"development", "test"}
+            or settings.dashboard_access_code.get_secret_value()
+        )
         and request.url.path.startswith(protected_prefix)
         and request.url.path not in public_paths
         and not is_authenticated(request.cookies.get(settings.dashboard_auth_cookie), settings)

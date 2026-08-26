@@ -6,6 +6,7 @@ from novel_signal.db import Base
 from novel_signal.modules.actions import models as action_models  # noqa: F401
 from novel_signal.modules.ads import models as ads_models  # noqa: F401
 from novel_signal.modules.alerts import models as alert_models  # noqa: F401
+from novel_signal.modules.auth import models as auth_models  # noqa: F401
 from novel_signal.modules.collection import models as collection_models  # noqa: F401
 from novel_signal.modules.keywords import models as keyword_models  # noqa: F401
 from novel_signal.modules.listings import models as listing_models  # noqa: F401
