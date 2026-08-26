@@ -36,10 +36,13 @@ def module_meta() -> dict[str, str]:
     return {"module": "S8 Market Share", "owner": "Palguna", "status": "ready"}
 
 
-def page(items: list[Any], limit: int) -> Page:
+def page(items: list[Any], limit: int, schema: type[Any]) -> Page:
     has_more = len(items) > limit
     visible = items[:limit]
-    return Page(items=visible, next_cursor=visible[-1].id if has_more and visible else None)
+    return Page(
+        items=[schema.model_validate(item) for item in visible],
+        next_cursor=visible[-1].id if has_more and visible else None,
+    )
 
 
 @router.post("/model-fits", response_model=ModelFitRead, status_code=status.HTTP_201_CREATED)
@@ -53,7 +56,7 @@ def get_model_fits(
     cursor: str | None = None,
     db: Session = Depends(get_db),
 ) -> Page:
-    return page(list_items(db, UnitsModelFit, limit=limit, cursor=cursor), limit)
+    return page(list_items(db, UnitsModelFit, limit=limit, cursor=cursor), limit, ModelFitRead)
 
 
 @router.post("/estimates", response_model=UnitsEstimateRead, status_code=status.HTTP_201_CREATED)
@@ -70,7 +73,7 @@ def get_estimates(
     cursor: str | None = None,
     db: Session = Depends(get_db),
 ) -> Page:
-    return page(list_items(db, UnitsEstimate, limit=limit, cursor=cursor), limit)
+    return page(list_items(db, UnitsEstimate, limit=limit, cursor=cursor), limit, UnitsEstimateRead)
 
 
 @router.post("/shares", response_model=MarketShareRead, status_code=status.HTTP_201_CREATED)
@@ -84,7 +87,11 @@ def get_shares(
     cursor: str | None = None,
     db: Session = Depends(get_db),
 ) -> Page:
-    return page(list_items(db, MarketShareDaily, limit=limit, cursor=cursor), limit)
+    return page(
+        list_items(db, MarketShareDaily, limit=limit, cursor=cursor),
+        limit,
+        MarketShareRead,
+    )
 
 
 @router.post("/backtests", response_model=BacktestRead, status_code=status.HTTP_201_CREATED)
@@ -101,4 +108,4 @@ def get_backtests(
     cursor: str | None = None,
     db: Session = Depends(get_db),
 ) -> Page:
-    return page(list_items(db, ModelBacktest, limit=limit, cursor=cursor), limit)
+    return page(list_items(db, ModelBacktest, limit=limit, cursor=cursor), limit, BacktestRead)

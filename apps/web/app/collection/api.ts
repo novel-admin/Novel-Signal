@@ -17,6 +17,7 @@ export async function request<T>(
 ): Promise<T> {
   const response = await fetch(`${base}${path}`, {
     ...init,
+    credentials: "include",
     headers: {
       "Content-Type": "application/json",
       ...init?.headers,

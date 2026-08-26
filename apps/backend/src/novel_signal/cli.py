@@ -21,6 +21,11 @@ from novel_signal.modules.actions.models import Action, ChangeEvent, Gap
 
 # Import every model module so the metadata used by the fixture generator is complete.
 from novel_signal.modules.ads import models as ads_models  # noqa: F401
+from novel_signal.modules.ads.models import (
+    AdObservation,
+    AmazonAdsSearchTermContribution,
+    OwnAdPerformance,
+)
 from novel_signal.modules.alerts.models import AlertEvent, AlertRule
 from novel_signal.modules.auth.models import User
 from novel_signal.modules.auth.service import password_hash
@@ -34,10 +39,13 @@ from novel_signal.modules.keywords.models import (
     TrackingTarget,
 )
 from novel_signal.modules.listings import models as listings_models  # noqa: F401
+from novel_signal.modules.listings.models import ListingSnapshot
 from novel_signal.modules.market_share import models as market_share_models  # noqa: F401
+from novel_signal.modules.market_share.models import MarketShareDaily, UnitsEstimate, UnitsModelFit
 from novel_signal.modules.price_monitoring import models as price_models  # noqa: F401
 from novel_signal.modules.rank_visibility import models as rank_models  # noqa: F401
 from novel_signal.modules.reviews import models as review_models  # noqa: F401
+from novel_signal.modules.reviews.models import ReviewObservation
 from novel_signal.modules.scorecards.models import ScorecardCell
 from novel_signal.modules.universe.models import (
     BattleCard,
@@ -175,6 +183,105 @@ def _seed_all_empty_tables(session) -> int:
     return seeded
 
 
+def _repair_demo_contracts(session) -> None:
+    """Make legacy demo fixtures match the public API and evidence contracts."""
+    raw = session.query(collection_models.RawEvidence).first()
+    parser = session.query(collection_models.ParserVersion).first()
+    if raw and parser:
+        raw_id = str(raw.id)
+        parser_id = str(parser.id)
+        for observation in session.query(AdObservation).all():
+            observation.platform = "amazon"
+            observation.marketplace = "amazon_in"
+            observation.ad_type = "sponsored_product"
+            observation.raw_capture_id = raw_id
+            observation.parse_run_id = parser_id
+            observation.evidence_ref = f"raw-evidence:{raw_id}"
+            observation.confidence = 0.92
+            observation.status = "measured"
+            observation.publication_status = "published"
+            observation.quarantine_reason = None
+        for review in session.query(ReviewObservation).all():
+            review.raw_capture_id = raw_id
+            review.parse_run_id = parser_id
+            review.publication_status = "published"
+            review.quarantine_reason = None
+            review.confidence = "medium"
+            review.evidence = {"demo": True, "raw_evidence_id": raw_id}
+        for contribution in session.query(AmazonAdsSearchTermContribution).all():
+            contribution.raw_capture_id = raw_id
+            contribution.parse_run_id = parser_id
+            contribution.currency = "INR"
+            contribution.confidence = "measured"
+
+        providers = (
+            ("amazon_ads", "demo-amazon-account", "amazon-sponsored-products", 14800, 610, 18450.0, 49200.0, 158),
+            ("google_ads", "demo-google-account", "google-search-brand", 22100, 940, 26700.0, 71300.0, 204),
+            ("meta_ads", "demo-meta-account", "meta-awareness", 38400, 720, 19800.0, 42100.0, 96),
+        )
+        period_end = date.today()
+        period_start = period_end - timedelta(days=6)
+        for platform, account, campaign, impressions, clicks, spend, sales, conversions in providers:
+            performance = session.query(OwnAdPerformance).filter_by(
+                account_id=account,
+                campaign_id=campaign,
+                period_start=period_start,
+                period_end=period_end,
+            ).one_or_none()
+            if performance is None:
+                session.add(OwnAdPerformance(
+                    platform=platform, account_id=account, campaign_id=campaign,
+                    period_start=period_start, period_end=period_end,
+                    impressions=impressions, clicks=clicks, spend=spend, sales=sales,
+                    conversions=conversions,
+                    payload={"demo": True, "currency": "INR", "granularity": "summary"},
+                    evidence_ref=f"raw-evidence:{raw_id}",
+                ))
+        competitor = session.query(Competitor).first()
+        keyword = session.query(Keyword).first()
+        for platform, ad_type, position in (
+            ("amazon", "sponsored_product", 2),
+            ("google", "search_ad", 1),
+            ("meta", "ad_library_creative", None),
+        ):
+            fingerprint = f"demo-{platform}-ad-observation"
+            if session.query(AdObservation).filter_by(fingerprint=fingerprint).one_or_none() is None:
+                session.add(AdObservation(
+                    platform=platform, marketplace="india",
+                    competitor_id=str(competitor.id) if competitor else None,
+                    keyword_id=str(keyword.id) if keyword else None,
+                    raw_capture_id=raw_id, parse_run_id=parser_id,
+                    ad_type=ad_type, sponsored_position=position,
+                    captured_at=datetime.now(UTC) - timedelta(hours=position or 3),
+                    evidence_ref=f"raw-evidence:{raw_id}", confidence=0.9,
+                    status="measured", publication_status="published",
+                    fingerprint=fingerprint,
+                ))
+
+    for snapshot in session.query(ListingSnapshot).all():
+        snapshot.title = snapshot.title or "Novel Premium Care Wipes, 3 Pack"
+        snapshot.brand = snapshot.brand or "Novel"
+        snapshot.bullets = ["Soft and absorbent", "Dermatologically tested", "Resealable pack"]
+        snapshot.key_features = ["Alcohol free", "Everyday personal care"]
+        snapshot.a_plus_sections = []
+        snapshot.image_urls = snapshot.image_urls if isinstance(snapshot.image_urls, list) else []
+        snapshot.image_hashes = snapshot.image_hashes if isinstance(snapshot.image_hashes, list) else []
+        snapshot.completeness_breakdown = {"title": 20, "bullets": 20, "images": 15, "description": 15}
+
+    for fit in session.query(UnitsModelFit).all():
+        fit.sample_count = max(fit.sample_count, 120)
+        fit.status = "active"
+        fit.metrics = {"mae": 8.4, "mape": 12.6}
+        fit.input_evidence = {"demo": True, "sources": ["amazon_bsr", "own_sales"]}
+    for estimate in session.query(UnitsEstimate).all():
+        estimate.confidence = "low"
+        estimate.method = "bsr-category-curve"
+        estimate.input_evidence = {"demo": True, "measured_inputs": ["bsr", "price"]}
+    for share in session.query(MarketShareDaily).all():
+        share.confidence = "low"
+        share.input_evidence = {"demo": True, "estimated": True}
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(prog="novel-signal")
     subcommands = parser.add_subparsers(dest="command", required=True)
@@ -280,6 +387,7 @@ def main() -> int:
             if session.query(AlertEvent).filter_by(fingerprint="demo-alert-rank-drop").one_or_none() is None:
                 session.add(AlertEvent(rule_id=rule.id, alert_type="rank_drop", severity="warning", target_type="keyword", target_id="demo-keyword", title="Novel slipped 5 positions", detail="Demo alert showing the review workflow.", evidence={"demo": True, "previous_rank": 3, "current_rank": 8}, fingerprint="demo-alert-rank-drop"))
             seeded_tables = _seed_all_empty_tables(session)
+            _repair_demo_contracts(session)
             session.commit()
         print(json.dumps({"seeded": True, "tables_seeded": seeded_tables, "email": "demo@demo.com"}))
         return 0

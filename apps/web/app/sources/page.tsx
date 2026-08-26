@@ -21,8 +21,8 @@ export default function SourcesPage() {
     setError("");
     try {
       const [sourceResponse, readinessResponse] = await Promise.all([
-        fetch(`${api}/sources`, { cache: "no-store" }),
-        fetch(`${api}/collection/readiness`, { cache: "no-store" }),
+        fetch(`${api}/sources`, { cache: "no-store", credentials: "include" }),
+        fetch(`${api}/collection/readiness`, { cache: "no-store", credentials: "include" }),
       ]);
       if (!sourceResponse.ok || !readinessResponse.ok) throw new Error("Unable to load source readiness");
       setSources(await sourceResponse.json() as Source[]);

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createAction, loadActions, transitionAction } from "../app/work/api";
+import { createAction, loadActions, loadCaptures, loadJobs, transitionAction } from "../app/work/api";
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -24,6 +24,18 @@ describe("Week 1 work API", () => {
 
     expect(fetchMock.mock.calls[0][0]).toContain("/changes/c1/actions");
     expect(fetchMock.mock.calls[1][1]?.body).toContain('"status":"done"');
+  });
+
+  it("uses the collection list contracts exposed by the backend", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(new Response(JSON.stringify({ items: [{ id: "j1", job_type: "serp" }] }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ items: [{ id: "r1", evidence_type: "response_body" }] }), { status: 200 }));
+
+    await expect(loadJobs()).resolves.toEqual([{ id: "j1", job_type: "serp" }]);
+    await expect(loadCaptures()).resolves.toEqual([{ id: "r1", evidence_type: "response_body" }]);
+    expect(fetchMock.mock.calls[0][0]).toContain("/collection/jobs");
+    expect(fetchMock.mock.calls[1][0]).toContain("/collection/raw-evidence");
+    expect(fetchMock.mock.calls[0][1]).toMatchObject({ credentials: "include" });
   });
 });
 

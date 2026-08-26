@@ -14,7 +14,7 @@ function errorMessage(body: unknown, status: number) {
 }
 
 export async function request<T>(path: string): Promise<T> {
-  const response = await fetch(`${base}${path}`, { cache: "no-store" });
+  const response = await fetch(`${base}${path}`, { cache: "no-store", credentials: "include" });
   const body: unknown = await response.json().catch(() => null);
   if (!response.ok) throw new Error(errorMessage(body, response.status));
   return body as T;
