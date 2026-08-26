@@ -5,13 +5,17 @@ import uuid
 from typing import Any
 
 from novel_signal.db import SessionLocal
+from novel_signal.modules.collection.amazon_product_executor import AmazonProductExecutor
+from novel_signal.modules.collection.amazon_serp_executor import AmazonSerpExecutor
 from novel_signal.modules.collection.execution import (
     CollectionExecutionError,
     execute_async,
     get_executor,
+    register_executor,
 )
 from novel_signal.modules.collection.models import (
     CollectionFailureType,
+    CollectionJobType,
     ParserVersion,
     RawEvidence,
 )
@@ -22,6 +26,9 @@ from novel_signal.modules.collection.service import (
     utc_now,
 )
 from novel_signal.tasks.celery_app import celery_app
+
+register_executor("amazon_in", CollectionJobType.SERP, AmazonSerpExecutor)
+register_executor("amazon_in", CollectionJobType.PRODUCT_DETAIL, AmazonProductExecutor)
 
 
 def _worker_id(task: Any) -> str:

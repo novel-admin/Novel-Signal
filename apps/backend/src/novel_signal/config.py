@@ -22,6 +22,10 @@ class Settings(BaseSettings):
     amazon_in_concurrency: int = 1
     amazon_in_min_delay_seconds: int = 8
     amazon_in_max_delay_seconds: int = 15
+    amazon_in_geo_code: str = "IN"
+    amazon_in_pincode: str = ""
+    amazon_in_location_label: str = ""
+    amazon_in_device_profile: str = "desktop"
     collector_timeout_seconds: int = 45
     collector_max_attempts: int = 3
     collector_failure_rate_warn_threshold: float = 0.05

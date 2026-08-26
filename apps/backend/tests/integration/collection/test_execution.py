@@ -31,6 +31,7 @@ def clean_registry() -> None:
 def work_item() -> CollectionWorkItem:
     return CollectionWorkItem(
         job_id=uuid.uuid4(),
+        attempt_id=uuid.uuid4(),
         job_type=CollectionJobType.SERP,
         platform="amazon_in",
         keyword_id=uuid.uuid4(),
