@@ -12,6 +12,10 @@ from novel_signal.modules.rank_visibility.errors import (
     RankVisibilityNotFoundError,
     RankVisibilityValidationError,
 )
+from novel_signal.modules.rank_visibility.google_visibility import (
+    GoogleDomainComparison,
+    GoogleVisibilityService,
+)
 from novel_signal.modules.rank_visibility.models import (
     BadgeEventType,
     BadgeType,
@@ -197,6 +201,31 @@ def brand_presence(
     return execute(
         lambda: service.brand_presence(
             capture_id=capture_id, keyword_id=keyword_id, from_at=from_at, to_at=to_at
+        )
+    )
+
+
+@router.get("/google-domain-comparison", response_model=GoogleDomainComparison)
+def google_domain_comparison(
+    session: SessionDep,
+    novel_domain: str,
+    competitor_domain: Annotated[list[str], Query()],
+    keyword_id: uuid.UUID | None = None,
+    geo_code: str | None = None,
+    device_profile: DeviceProfile | None = None,
+    from_at: FromDate = None,
+    to_at: ToDate = None,
+) -> GoogleDomainComparison:
+    service = GoogleVisibilityService(session)
+    return execute(
+        lambda: service.domain_comparison(
+            novel_domain=novel_domain,
+            competitor_domains=competitor_domain,
+            keyword_id=keyword_id,
+            geo_code=geo_code,
+            device_profile=device_profile,
+            from_at=from_at,
+            to_at=to_at,
         )
     )
 

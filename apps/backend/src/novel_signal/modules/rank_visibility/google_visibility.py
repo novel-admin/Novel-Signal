@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import uuid
 from datetime import datetime
 from typing import Self
@@ -16,6 +17,7 @@ from novel_signal.modules.keywords.models import Keyword
 from novel_signal.modules.rank_visibility.errors import (
     RankVisibilityConflictError,
     RankVisibilityNotFoundError,
+    RankVisibilityValidationError,
 )
 from novel_signal.modules.rank_visibility.models import (
     DeviceProfile,
@@ -121,6 +123,35 @@ class GoogleCaptureIngest(BaseModel):
         return self
 
 
+class GoogleDomainVisibility(BaseModel):
+    domain: str
+    matched_organic_slots: int
+    total_eligible_organic_slots: int
+    visibility_share_percent: float
+    keyword_coverage_count: int
+    latest_rank: int | None
+    best_rank: int | None
+    capture_ids: list[uuid.UUID]
+    result_ids: list[uuid.UUID]
+
+
+class GoogleDomainComparisonRow(BaseModel):
+    competitor_domain: str
+    slot_count_difference: int
+    keyword_coverage_difference: int
+    signals: list[str]
+
+
+class GoogleDomainComparison(BaseModel):
+    source: str = "public_google_serp"
+    contexts_checked: int
+    keyword_count: int
+    novel: GoogleDomainVisibility
+    competitors: list[GoogleDomainVisibility]
+    comparisons: list[GoogleDomainComparisonRow]
+    evidence_capture_ids: list[uuid.UUID]
+
+
 class GoogleVisibilityRepository:
     def __init__(self, session: Session) -> None:
         self.session = session
@@ -177,6 +208,37 @@ class GoogleVisibilityRepository:
                 )
             ).all()
         ]
+
+    def current_captures(
+        self,
+        *,
+        keyword_id: uuid.UUID | None = None,
+        geo_code: str | None = None,
+        device_profile: DeviceProfile | None = None,
+        from_at: datetime | None = None,
+        to_at: datetime | None = None,
+    ) -> list[GoogleSerpCapture]:
+        statement = select(GoogleSerpCapture).options(selectinload(GoogleSerpCapture.results))
+        if keyword_id:
+            statement = statement.where(GoogleSerpCapture.keyword_id == keyword_id)
+        if geo_code:
+            statement = statement.where(GoogleSerpCapture.geo_code == geo_code)
+        if device_profile:
+            statement = statement.where(GoogleSerpCapture.device_profile == device_profile)
+        if from_at:
+            statement = statement.where(GoogleSerpCapture.captured_at >= from_at)
+        if to_at:
+            statement = statement.where(GoogleSerpCapture.captured_at <= to_at)
+        captures = list(
+            self.session.scalars(
+                statement.order_by(GoogleSerpCapture.captured_at, GoogleSerpCapture.id)
+            ).unique()
+        )
+        # Current visibility uses only the latest capture for each independent context.
+        latest: dict[tuple[uuid.UUID, str, DeviceProfile], GoogleSerpCapture] = {}
+        for capture in captures:
+            latest[(capture.keyword_id, capture.geo_code, capture.device_profile)] = capture
+        return sorted(latest.values(), key=lambda item: (item.captured_at, str(item.id)))
 
 
 class GoogleVisibilityService:
@@ -244,6 +306,127 @@ class GoogleVisibilityService:
             (result for result, capture in rows if capture.captured_at == latest_at),
             key=lambda result: result.absolute_position,
         )
+
+    def domain_comparison(
+        self,
+        *,
+        novel_domain: str,
+        competitor_domains: list[str],
+        keyword_id: uuid.UUID | None,
+        geo_code: str | None,
+        device_profile: DeviceProfile | None,
+        from_at: datetime | None,
+        to_at: datetime | None,
+    ) -> GoogleDomainComparison:
+        novel = normalize_domain(novel_domain)
+        competitors = [normalize_domain(value) for value in competitor_domains]
+        if not competitors:
+            raise RankVisibilityValidationError("Provide at least one competitor domain")
+        if len(set(competitors)) != len(competitors) or novel in competitors:
+            raise RankVisibilityValidationError("Google comparison domains must be distinct")
+        captures = self.repository.current_captures(
+            keyword_id=keyword_id,
+            geo_code=geo_code,
+            device_profile=device_profile,
+            from_at=from_at,
+            to_at=to_at,
+        )
+        total = sum(len(capture.results) for capture in captures)
+
+        def visibility(domain: str) -> GoogleDomainVisibility:
+            matches = [
+                (result, capture)
+                for capture in captures
+                for result in capture.results
+                if domain_matches(result.displayed_domain, domain)
+            ]
+            latest_rank = None
+            if matches:
+                latest_at = max(capture.captured_at for _, capture in matches)
+                latest_rank = min(
+                    result.absolute_position
+                    for result, capture in matches
+                    if capture.captured_at == latest_at
+                )
+            return GoogleDomainVisibility(
+                domain=domain,
+                matched_organic_slots=len(matches),
+                total_eligible_organic_slots=total,
+                visibility_share_percent=round(len(matches) / total * 100, 2) if total else 0.0,
+                keyword_coverage_count=len(_matched_keywords(captures, domain)),
+                latest_rank=latest_rank,
+                best_rank=min((result.absolute_position for result, _ in matches), default=None),
+                capture_ids=sorted({capture.id for _, capture in matches}, key=str),
+                result_ids=sorted((result.id for result, _ in matches), key=str),
+            )
+
+        novel_visibility = visibility(novel)
+        competitor_visibility = [visibility(domain) for domain in competitors]
+        novel_keywords = _matched_keywords(captures, novel)
+        comparisons = []
+        for item in competitor_visibility:
+            signals = []
+            if novel_visibility.matched_organic_slots > item.matched_organic_slots:
+                signals.append("novel_leads_visibility")
+            elif novel_visibility.matched_organic_slots < item.matched_organic_slots:
+                signals.append("competitor_leads_visibility")
+            else:
+                signals.append("visibility_tied")
+            competitor_keywords = _matched_keywords(captures, item.domain)
+            if competitor_keywords - novel_keywords:
+                signals.append("novel_missing_on_keyword")
+            if novel_keywords - competitor_keywords:
+                signals.append("competitor_missing_on_keyword")
+            comparisons.append(
+                GoogleDomainComparisonRow(
+                    competitor_domain=item.domain,
+                    slot_count_difference=(
+                        novel_visibility.matched_organic_slots - item.matched_organic_slots
+                    ),
+                    keyword_coverage_difference=(
+                        novel_visibility.keyword_coverage_count - item.keyword_coverage_count
+                    ),
+                    signals=signals,
+                )
+            )
+        return GoogleDomainComparison(
+            contexts_checked=len(captures),
+            keyword_count=len({capture.keyword_id for capture in captures}),
+            novel=novel_visibility,
+            competitors=competitor_visibility,
+            comparisons=comparisons,
+            evidence_capture_ids=sorted((capture.id for capture in captures), key=str),
+        )
+
+
+_DOMAIN = re.compile(
+    r"(?=.{1,253}\.?$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+"
+    r"[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?\.?"
+)
+
+
+def normalize_domain(value: str) -> str:
+    normalized = value.strip().lower().strip(".")
+    if normalized.startswith("www."):
+        normalized = normalized[4:]
+    if not _DOMAIN.fullmatch(normalized):
+        raise RankVisibilityValidationError("Google comparison domain is malformed")
+    return normalized
+
+
+def domain_matches(observed: str, configured: str) -> bool:
+    normalized = observed.strip().lower().strip(".")
+    if normalized.startswith("www."):
+        normalized = normalized[4:]
+    return normalized == configured or normalized.endswith(f".{configured}")
+
+
+def _matched_keywords(captures: list[GoogleSerpCapture], domain: str) -> set[uuid.UUID]:
+    return {
+        capture.keyword_id
+        for capture in captures
+        if any(domain_matches(result.displayed_domain, domain) for result in capture.results)
+    }
 
 
 def _contains_raw_payload(value: object) -> bool:
