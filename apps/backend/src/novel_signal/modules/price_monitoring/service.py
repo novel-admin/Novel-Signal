@@ -28,8 +28,11 @@ from novel_signal.modules.price_monitoring.schemas import (
     PriceComparison,
     PriceMetrics,
     PriceObservationIn,
+    PricePerUnitComparison,
+    PricePerUnitSide,
     PriceSide,
 )
+from novel_signal.modules.universe.models import CompetitorProduct, Product
 
 CENT = Decimal("0.01")
 FRESHNESS_MINUTES = 240
@@ -401,4 +404,53 @@ class PriceService:
                 "seller_count_difference": delta(owned.seller_count, competitor.seller_count),
             },
             signals=signals,
+        )
+
+    def price_per_unit_comparison(
+        self, product_id: uuid.UUID, competitor_product_id: uuid.UUID, geo_code: str | None
+    ) -> PricePerUnitComparison:
+        product = self.session.get(Product, product_id)
+        competitor = self.session.get(CompetitorProduct, competitor_product_id)
+        if product is None or product.archived_at is not None:
+            raise PriceNotFound("Owned product not found")
+        if competitor is None or competitor.archived_at is not None:
+            raise PriceNotFound("Competitor product not found")
+        owned_observation = self.latest(product_id, None, None, geo_code)
+        competitor_observation = self.latest(None, competitor_product_id, None, geo_code)
+
+        def side(
+            observation: PriceObservation, quantity: int | None, unit: str | None
+        ) -> PricePerUnitSide:
+            normalized_unit = clean(unit)
+            per_unit = (
+                money(observation.primary_price / Decimal(quantity))
+                if observation.primary_price is not None and quantity is not None and quantity > 0
+                else None
+            )
+            return PricePerUnitSide(
+                observation_id=observation.id,
+                price=observation.primary_price,
+                pack_quantity=quantity,
+                pack_unit=normalized_unit.casefold() if normalized_unit else None,
+                price_per_unit=per_unit,
+            )
+
+        owned = side(owned_observation, product.pack_quantity, product.pack_unit)
+        competing = side(competitor_observation, competitor.pack_quantity, competitor.pack_unit)
+        comparable = (
+            owned.price_per_unit is not None
+            and competing.price_per_unit is not None
+            and owned.pack_unit is not None
+            and owned.pack_unit == competing.pack_unit
+        )
+        return PricePerUnitComparison(
+            owned=owned,
+            competitor=competing,
+            comparable=comparable,
+            unit=owned.pack_unit if comparable else None,
+            difference=money(owned.price_per_unit - competing.price_per_unit)
+            if comparable
+            and owned.price_per_unit is not None
+            and competing.price_per_unit is not None
+            else None,
         )

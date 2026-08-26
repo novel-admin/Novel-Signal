@@ -102,8 +102,8 @@ class CollectionPlanningService:
         created = 0
         existing = 0
 
-        # One SERP capture per keyword. If several targets share a keyword,
-        # the shortest configured cadence wins so the capture is never duplicated.
+        # One SERP capture per keyword and platform. If several targets share a
+        # keyword, the shortest configured cadence wins within each platform.
         cadence_by_keyword: dict[uuid.UUID, int] = {}
         for target in self.repository.active_serp_targets():
             cadence_by_keyword[target.keyword_id] = min(
@@ -113,27 +113,28 @@ class CollectionPlanningService:
 
         for keyword_id, cadence_minutes in cadence_by_keyword.items():
             scheduled_for = cadence_slot(now, cadence_minutes)
-            key = idempotency_key(
-                platform="amazon_in",
-                job_type=CollectionJobType.SERP,
-                subject_type="keyword",
-                subject_id=keyword_id,
-                scheduled_for=scheduled_for,
-            )
-            job = CollectionJob(
-                idempotency_key=key,
-                job_type=CollectionJobType.SERP,
-                source_tier=CollectionSourceTier.PUBLIC_PAGE,
-                platform="amazon_in",
-                keyword_id=keyword_id,
-                scheduled_for=scheduled_for,
-                not_before=scheduled_for,
-                max_attempts=self.settings.collector_max_attempts,
-            )
-            stored, was_created = self.repository.create_job_if_absent(job)
-            jobs.append(stored)
-            created += int(was_created)
-            existing += int(not was_created)
+            for platform in ("amazon_in", "google"):
+                key = idempotency_key(
+                    platform=platform,
+                    job_type=CollectionJobType.SERP,
+                    subject_type="keyword",
+                    subject_id=keyword_id,
+                    scheduled_for=scheduled_for,
+                )
+                job = CollectionJob(
+                    idempotency_key=key,
+                    job_type=CollectionJobType.SERP,
+                    source_tier=CollectionSourceTier.PUBLIC_PAGE,
+                    platform=platform,
+                    keyword_id=keyword_id,
+                    scheduled_for=scheduled_for,
+                    not_before=scheduled_for,
+                    max_attempts=self.settings.collector_max_attempts,
+                )
+                stored, was_created = self.repository.create_job_if_absent(job)
+                jobs.append(stored)
+                created += int(was_created)
+                existing += int(not was_created)
 
         product_slot = cadence_slot(now, self.PRODUCT_DETAIL_CADENCE_MINUTES)
         for product in self.repository.active_products():
@@ -227,6 +228,7 @@ class CollectionLifecycleService:
 
         attempt_number = job.attempt_count + 1
         attempt = CollectionAttempt(
+            id=uuid.uuid4(),
             job=job,
             attempt_number=attempt_number,
             status=CollectionAttemptStatus.RUNNING,

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import uuid
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -21,7 +22,6 @@ from novel_signal.modules.collection.models import (
     DataQualityStatus,
     ParserVersion,
     RawEvidence,
-    RawEvidenceType,
 )
 from novel_signal.modules.collection.parsing import (
     EnvelopeValidator,
@@ -29,6 +29,7 @@ from novel_signal.modules.collection.parsing import (
     ParserRegistry,
     ValidationResult,
 )
+from novel_signal.modules.collection.raw_evidence import RawEvidenceWriter
 from novel_signal.modules.collection.repository import CollectionRepository
 from novel_signal.modules.collection.storage import RawObjectStore, S3RawObjectStore
 
@@ -77,6 +78,10 @@ class EvidencePipeline:
         self.parser_registry = parser_registry
         self.object_store = object_store or S3RawObjectStore()
         self.session_factory = session_factory
+        self.raw_evidence_writer = RawEvidenceWriter(
+            object_store=self.object_store,
+            session_factory=self.session_factory,
+        )
 
     def process(
         self,
@@ -109,13 +114,64 @@ class EvidencePipeline:
                 details={"raw_evidence_id": str(raw.id)},
             )
 
+        return self.process_persisted_raw(
+            job_id=job_id,
+            attempt_id=attempt_id,
+            raw_evidence_id=raw.id,
+            platform=platform,
+            page_type=request.page_type,
+            body=capture.body,
+            validator=validator,
+            publisher=publisher,
+            captured_at=captured,
+        )
+
+    def process_persisted_raw(
+        self,
+        *,
+        job_id: uuid.UUID,
+        attempt_id: uuid.UUID,
+        raw_evidence_id: uuid.UUID,
+        platform: str,
+        page_type: str,
+        body: bytes,
+        validator: EnvelopeValidator,
+        publisher: NormalizedPublisher,
+        captured_at: datetime | None = None,
+    ) -> CollectionExecutionResult:
+        """Parse and publish an already durable raw response without writing it again."""
+        with self.session_factory() as session:
+            raw_evidence = session.get(RawEvidence, raw_evidence_id)
+            if raw_evidence is None:
+                raise CollectionExecutionError(
+                    "Raw evidence was not found for downstream processing",
+                    failure_type=CollectionFailureType.VALIDATION_ERROR,
+                    code="raw_evidence_not_found",
+                    retryable=False,
+                )
+            if raw_evidence.job_id != job_id or raw_evidence.attempt_id != attempt_id:
+                raise CollectionExecutionError(
+                    "Raw evidence does not match the collection attempt",
+                    failure_type=CollectionFailureType.VALIDATION_ERROR,
+                    code="raw_evidence_lineage_mismatch",
+                    retryable=False,
+                )
+            if hashlib.sha256(body).hexdigest() != raw_evidence.sha256:
+                raise CollectionExecutionError(
+                    "Body does not match the immutable raw evidence",
+                    failure_type=CollectionFailureType.VALIDATION_ERROR,
+                    code="raw_evidence_body_mismatch",
+                    retryable=False,
+                )
+            captured = (captured_at or raw_evidence.captured_at).astimezone(UTC)
+
         try:
-            parser = self.parser_registry.get(platform, request.page_type)
+            parser = self.parser_registry.get(platform, page_type)
         except ParserNotRegisteredError as error:
             return CollectionExecutionResult(
-                metadata={"raw_evidence_id": str(raw.id)},
+                metadata={"raw_evidence_id": str(raw_evidence_id)},
                 quarantine=QuarantineDecision(
-                    raw_evidence_id=raw.id,
+                    raw_evidence_id=raw_evidence_id,
                     parser_version_id=None,
                     failure_type=CollectionFailureType.PARSE_ERROR,
                     reason_code="parser_not_registered",
@@ -127,16 +183,15 @@ class EvidencePipeline:
 
         parser_version = self._ensure_parser_version(
             platform=platform,
-            page_type=request.page_type,
+            page_type=page_type,
             version=parser.version,
         )
-
         try:
-            envelope = parser.parse(capture.body)
+            envelope = parser.parse(body)
         except Exception as error:
             self._record_quality(
                 platform=platform,
-                page_type=request.page_type,
+                page_type=page_type,
                 check_type=DataQualityCheckType.CONSISTENCY,
                 status=DataQualityStatus.FAIL,
                 observed={"exception_type": type(error).__name__},
@@ -145,9 +200,9 @@ class EvidencePipeline:
                 details={"message": str(error)},
             )
             return CollectionExecutionResult(
-                metadata={"raw_evidence_id": str(raw.id)},
+                metadata={"raw_evidence_id": str(raw_evidence_id)},
                 quarantine=QuarantineDecision(
-                    raw_evidence_id=raw.id,
+                    raw_evidence_id=raw_evidence_id,
                     parser_version_id=parser_version.id,
                     failure_type=CollectionFailureType.PARSE_ERROR,
                     reason_code="parser_exception",
@@ -161,19 +216,19 @@ class EvidencePipeline:
 
         validation = validator.validate(
             envelope,
-            expected_page_type=request.page_type,
+            expected_page_type=page_type,
             expected_parser_version=parser.version,
         )
         self._record_validation_quality(
             platform=platform,
-            page_type=request.page_type,
+            page_type=page_type,
             validation=validation,
         )
         if not validation.valid:
             return CollectionExecutionResult(
-                metadata={"raw_evidence_id": str(raw.id)},
+                metadata={"raw_evidence_id": str(raw_evidence_id)},
                 quarantine=QuarantineDecision(
-                    raw_evidence_id=raw.id,
+                    raw_evidence_id=raw_evidence_id,
                     parser_version_id=parser_version.id,
                     failure_type=CollectionFailureType.VALIDATION_ERROR,
                     reason_code="schema_validation_failed",
@@ -187,17 +242,17 @@ class EvidencePipeline:
             PublishContext(
                 job_id=job_id,
                 attempt_id=attempt_id,
-                raw_evidence_id=raw.id,
+                raw_evidence_id=raw_evidence_id,
                 parser_version_id=parser_version.id,
                 platform=platform,
-                page_type=request.page_type,
+                page_type=page_type,
                 captured_at=captured,
             ),
             envelope.records,
         )
         return CollectionExecutionResult(
             metadata={
-                "raw_evidence_id": str(raw.id),
+                "raw_evidence_id": str(raw_evidence_id),
                 "parser_version_id": str(parser_version.id),
                 "parser_version": parser.version,
                 "row_count": len(envelope.records),
@@ -215,46 +270,22 @@ class EvidencePipeline:
         capture: CaptureResult,
         captured_at: datetime,
     ) -> RawEvidence:
-        try:
-            stored = self.object_store.put_raw(
-                platform=platform,
-                page_type=request.page_type,
-                body=capture.body,
-            )
-        except Exception as error:
-            raise CollectionExecutionError(
-                "Raw evidence storage failed before parsing",
-                failure_type=CollectionFailureType.STORAGE_ERROR,
-                code="raw_storage_failed",
-                retryable=True,
-                details={"exception_type": type(error).__name__},
-            ) from error
-
-        with self.session_factory() as session:
-            evidence = RawEvidence(
-                job_id=job_id,
-                attempt_id=attempt_id,
-                evidence_type=RawEvidenceType.RESPONSE_BODY,
-                sha256=stored.sha256,
-                storage_bucket=stored.bucket,
-                object_key=stored.object_key,
-                content_type=capture.content_type,
-                byte_length=stored.byte_length,
-                compressed=True,
-                final_url=capture.final_url,
-                challenge_detected=capture.challenge_detected,
-                capture_metadata={
-                    "target_id": request.target_id,
-                    "page_type": request.page_type,
-                    "requested_url": request.url,
-                    "compressed_byte_length": stored.compressed_byte_length,
-                },
-                captured_at=captured_at,
-            )
-            session.add(evidence)
-            session.commit()  # intentional durability boundary: raw evidence exists before parsing
-            session.refresh(evidence)
-            return evidence
+        return self.raw_evidence_writer.persist(
+            job_id=job_id,
+            attempt_id=attempt_id,
+            platform=platform,
+            page_type=request.page_type,
+            body=capture.body,
+            content_type=capture.content_type,
+            final_url=capture.final_url,
+            challenge_detected=capture.challenge_detected,
+            capture_metadata={
+                "target_id": request.target_id,
+                "page_type": request.page_type,
+                "requested_url": request.url,
+            },
+            captured_at=captured_at,
+        )
 
     def _ensure_parser_version(
         self, *, platform: str, page_type: str, version: str

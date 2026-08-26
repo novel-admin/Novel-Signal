@@ -1,16 +1,20 @@
+import gzip
 import json
+from datetime import UTC, datetime
 
 import httpx
 import pytest
 from novel_signal.sources.amazon.brand_analytics import (
     BrandAnalyticsAuthenticationError,
     BrandAnalyticsClient,
+    BrandAnalyticsCompressionError,
     BrandAnalyticsConfig,
     BrandAnalyticsEmptyResponseError,
     BrandAnalyticsMalformedResponseError,
     BrandAnalyticsNetworkError,
     BrandAnalyticsPermissionError,
     BrandAnalyticsRateLimitError,
+    BrandAnalyticsReportFailedError,
 )
 from novel_signal.sources.amazon.sp_api import (
     AmazonSpApiAuthenticationError,
@@ -19,6 +23,7 @@ from novel_signal.sources.amazon.sp_api import (
     AmazonSpApiMalformedResponseError,
     AmazonSpApiPermissionError,
 )
+from novel_signal.sources.base import SyncRequest
 
 
 def config(**overrides: str) -> BrandAnalyticsConfig:
@@ -43,6 +48,18 @@ def token_response() -> httpx.Response:
 
 def marketplace_response() -> httpx.Response:
     return httpx.Response(200, json={"payload": [{"marketplace": {"id": "A21TJRUUN4KGV"}}]})
+
+
+def raw_request() -> SyncRequest:
+    return SyncRequest(
+        "brand_analytics_search_query_performance",
+        datetime(2026, 8, 1, tzinfo=UTC),
+        datetime(2026, 8, 8, tzinfo=UTC),
+        {
+            "data_start_time": "2026-08-01T00:00:00+00:00",
+            "data_end_time": "2026-08-08T00:00:00+00:00",
+        },
+    )
 
 
 @pytest.mark.asyncio
@@ -230,3 +247,68 @@ async def test_brand_analytics_empty_valid_report_response_is_typed() -> None:
 def assert_no_secrets(message: str) -> None:
     for secret in ("client-secret", "refresh-token", "aws-secret-key"):
         assert secret not in message
+
+
+@pytest.mark.asyncio
+async def test_brand_analytics_fetches_done_report_document_as_exact_raw_bytes() -> None:
+    raw = b'{"report":"raw"}'
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.host == "lwa.test":
+            return token_response()
+        if request.url.host == "download.test":
+            return httpx.Response(200, content=raw, headers={"content-type": "application/json"})
+        if request.url.path == "/sellers/v1/marketplaceParticipations":
+            return marketplace_response()
+        if request.url.path == "/reports/2021-06-30/reports":
+            return httpx.Response(202, json={"reportId": "r1"})
+        if request.url.path.endswith("/r1"):
+            return httpx.Response(200, json={"processingStatus": "DONE", "reportDocumentId": "d1"})
+        if request.url.path.endswith("/d1"):
+            return httpx.Response(200, json={"url": "https://download.test/d1"})
+        raise AssertionError(f"Unexpected request: {request.url}")
+
+    async with BrandAnalyticsClient(config(), transport=httpx.MockTransport(handler)) as client:
+        first = await client.fetch(raw_request())
+        second = await client.fetch(raw_request())
+    assert first[0].body == raw and first[0].source.value == "amazon_brand_analytics"
+    assert first[0].request_fingerprint == second[0].request_fingerprint
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status", ["CANCELLED", "FATAL"])
+async def test_brand_analytics_fetch_rejects_terminal_failure(status: str) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.host == "lwa.test":
+            return token_response()
+        if request.url.path == "/sellers/v1/marketplaceParticipations":
+            return marketplace_response()
+        if request.url.path == "/reports/2021-06-30/reports":
+            return httpx.Response(202, json={"reportId": "r1"})
+        return httpx.Response(200, json={"processingStatus": status})
+
+    async with BrandAnalyticsClient(config(), transport=httpx.MockTransport(handler)) as client:
+        with pytest.raises(BrandAnalyticsReportFailedError):
+            await client.fetch(raw_request())
+
+
+@pytest.mark.asyncio
+async def test_brand_analytics_download_handles_gzip_and_rejects_invalid_compression() -> None:
+    payload = b'{"report":"decompressed"}'
+
+    async with BrandAnalyticsClient(
+        config(),
+        transport=httpx.MockTransport(
+            lambda _: httpx.Response(200, content=gzip.compress(payload))
+        ),
+    ) as client:
+        body, _ = await client._download("https://download.test/report", "GZIP")
+    assert body == payload
+
+    async with BrandAnalyticsClient(
+        config(), transport=httpx.MockTransport(lambda _: httpx.Response(200, content=b"not-gzip"))
+    ) as client:
+        with pytest.raises(BrandAnalyticsCompressionError):
+            await client._download("https://download.test/report", "GZIP")
+        with pytest.raises(BrandAnalyticsCompressionError):
+            await client._download("https://download.test/report", "ZIP")

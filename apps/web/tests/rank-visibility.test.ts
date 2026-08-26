@@ -20,4 +20,13 @@ describe("S3 rank and visibility", () => {
     expect(formatMetric(null)).toBe("—");
     expect(formatMetric(75, "%")).toBe("75%");
   });
+
+  it("wires measured Amazon and Google intelligence through normalized API routes", () => {
+    const root = join(process.cwd(), "app", "rank-visibility");
+    expect(readFileSync(join(root, "api.ts"), "utf8")).toContain("amazon-share-of-voice");
+    expect(readFileSync(join(root, "api.ts"), "utf8")).toContain("google-domain-comparison");
+    const screen = readFileSync(join(root, "rank-visibility-client.tsx"), "utf8");
+    expect(screen).toContain("Measured Amazon public SERP captures");
+    expect(screen).toContain("Measured public Google SERP evidence only");
+  });
 });

@@ -1,4 +1,4 @@
-import type { BadgeEvent, BrandPresence, Capture, CaptureDetail, KeywordOption, ListResponse, NewEntrant, RankHistory, Visibility } from "./types";
+import type { AmazonShareOfVoice, BadgeEvent, BrandPresence, Capture, CaptureDetail, GoogleDomainComparison, KeywordCoverageSummary, KeywordGapAnalysis, KeywordOption, ListResponse, NewEntrant, RankHistory, ReverseAsinIntelligence, Visibility } from "./types";
 
 // Keep browser traffic same-origin. Next.js proxies /api locally and deployments can route the
 // same path without exposing a backend host in the client bundle.
@@ -33,3 +33,8 @@ export const loadCapture = (id: string) => request<CaptureDetail>(`/rank-visibil
 export const loadHistory = (query: string) => request<RankHistory>(`/rank-visibility/rank-history?${query}`);
 export const loadVisibility = (query: string) => request<Visibility>(`/rank-visibility/visibility?${query}`);
 export const loadBrandPresence = (query: string) => request<BrandPresence>(`/rank-visibility/brand-presence?${query}`);
+export const loadReverseAsin = (query: string) => request<ReverseAsinIntelligence>(`/rank-visibility/reverse-asin?${query}`);
+export const loadShareOfVoice = (query: string) => request<AmazonShareOfVoice>(`/rank-visibility/amazon-share-of-voice?${query}`);
+export const loadKeywordGaps = (query: string) => request<KeywordGapAnalysis>(`/rank-visibility/keyword-gaps?${query}`);
+export const loadKeywordCoverage = (query: string) => request<KeywordCoverageSummary>(`/rank-visibility/keyword-coverage?${query}`);
+export const loadGoogleDomainComparison = (query: string) => request<GoogleDomainComparison>(`/rank-visibility/google-domain-comparison?${query}`);

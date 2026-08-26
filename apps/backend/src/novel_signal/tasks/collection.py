@@ -6,12 +6,15 @@ from typing import Any
 
 from novel_signal.collectors.amazon_in.executor import AmazonPublicExecutor
 from novel_signal.db import SessionLocal
+from novel_signal.modules.collection.amazon_product_executor import AmazonProductExecutor
+from novel_signal.modules.collection.amazon_serp_executor import AmazonSerpExecutor
 from novel_signal.modules.collection.execution import (
     CollectionExecutionError,
     execute_async,
     get_executor,
     register_executor,
 )
+from novel_signal.modules.collection.google_serp_executor import GoogleSerpExecutor
 from novel_signal.modules.collection.models import (
     CollectionFailureType,
     CollectionJobType,
@@ -26,8 +29,9 @@ from novel_signal.modules.collection.service import (
 )
 from novel_signal.tasks.celery_app import celery_app
 
-register_executor("amazon_in", CollectionJobType.SERP, AmazonPublicExecutor)
-register_executor("amazon_in", CollectionJobType.PRODUCT_DETAIL, AmazonPublicExecutor)
+register_executor("amazon_in", CollectionJobType.SERP, AmazonSerpExecutor)
+register_executor("amazon_in", CollectionJobType.PRODUCT_DETAIL, AmazonProductExecutor)
+register_executor("google", CollectionJobType.SERP, GoogleSerpExecutor)
 
 
 def _worker_id(task: Any) -> str:
