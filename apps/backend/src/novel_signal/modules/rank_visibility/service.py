@@ -29,6 +29,8 @@ from novel_signal.modules.rank_visibility.schemas import (
     BrandPresence,
     BrandPresenceRow,
     CaptureIngest,
+    KeywordCoverageRow,
+    KeywordCoverageSummary,
     KeywordGapAnalysis,
     KeywordGapRow,
     RankHistory,
@@ -512,6 +514,95 @@ class RankVisibilityService:
             gaps=gaps,
         )
 
+    def keyword_coverage(
+        self,
+        *,
+        owned_product_id: uuid.UUID,
+        competitor_product_id: uuid.UUID,
+        geo_code: str | None,
+        device_profile: DeviceProfile | None,
+        from_at: datetime | None,
+        to_at: datetime | None,
+    ) -> KeywordCoverageSummary:
+        captures = self.repository.filtered_captures_with_results(
+            marketplace=Marketplace.AMAZON_IN,
+            geo_code=geo_code,
+            device_profile=device_profile,
+            from_at=from_at,
+            to_at=to_at,
+        )
+        latest: dict[tuple[uuid.UUID, str, DeviceProfile], SerpCapture] = {}
+        for capture in captures:
+            latest[(capture.keyword_id, capture.geo_code, capture.device_profile)] = capture
+        contexts = []
+        for capture in latest.values():
+            owned = [row for row in capture.results if row.product_id == owned_product_id]
+            competitor = [
+                row for row in capture.results if row.competitor_product_id == competitor_product_id
+            ]
+            contexts.append(
+                KeywordCoverageRow(
+                    keyword_id=capture.keyword_id,
+                    capture_id=capture.id,
+                    captured_at=capture.captured_at,
+                    geo_code=capture.geo_code,
+                    device_profile=capture.device_profile,
+                    owned_present=bool(owned),
+                    competitor_present=bool(competitor),
+                    owned_organic_present=any(
+                        row.placement_type == PlacementType.ORGANIC for row in owned
+                    ),
+                    competitor_organic_present=any(
+                        row.placement_type == PlacementType.ORGANIC for row in competitor
+                    ),
+                    owned_paid_present=any(_is_paid(row) for row in owned),
+                    competitor_paid_present=any(_is_paid(row) for row in competitor),
+                    owned_result_ids=sorted((row.id for row in owned), key=str),
+                    competitor_result_ids=sorted((row.id for row in competitor), key=str),
+                    source_job_id=capture.source_job_id,
+                    parser_version=capture.parser_version,
+                )
+            )
+        contexts.sort(key=lambda row: (row.captured_at, str(row.keyword_id), row.geo_code))
+        denominator = len(contexts)
+
+        def count(attribute: str) -> int:
+            return sum(bool(getattr(row, attribute)) for row in contexts)
+
+        return KeywordCoverageSummary(
+            owned_product_id=owned_product_id,
+            competitor_product_id=competitor_product_id,
+            keyword_count=len({row.keyword_id for row in contexts}),
+            contexts_checked=denominator,
+            owned_present_count=count("owned_present"),
+            competitor_present_count=count("competitor_present"),
+            both_present_count=sum(
+                row.owned_present and row.competitor_present for row in contexts
+            ),
+            owned_only_count=sum(
+                row.owned_present and not row.competitor_present for row in contexts
+            ),
+            competitor_only_count=sum(
+                not row.owned_present and row.competitor_present for row in contexts
+            ),
+            neither_count=sum(
+                not row.owned_present and not row.competitor_present for row in contexts
+            ),
+            owned_organic_count=count("owned_organic_present"),
+            competitor_organic_count=count("competitor_organic_present"),
+            owned_paid_count=count("owned_paid_present"),
+            competitor_paid_count=count("competitor_paid_present"),
+            owned_organic_coverage_percent=_coverage(count("owned_organic_present"), denominator),
+            competitor_organic_coverage_percent=_coverage(
+                count("competitor_organic_present"), denominator
+            ),
+            owned_paid_coverage_percent=_coverage(count("owned_paid_present"), denominator),
+            competitor_paid_coverage_percent=_coverage(
+                count("competitor_paid_present"), denominator
+            ),
+            contexts=contexts,
+        )
+
 
 def _is_paid(result: SerpResult) -> bool:
     return result.placement_type in {
@@ -530,3 +621,7 @@ def _share(rows: list[SerpResult], matches: Callable[[SerpResult], bool]) -> Sha
         eligible_slots=total,
         share_percent=round(matched / total * 100, 2) if total else 0.0,
     )
+
+
+def _coverage(count: int, denominator: int) -> float:
+    return round(count / denominator * 100, 2) if denominator else 0.0

@@ -242,6 +242,46 @@ class KeywordGapAnalysis(BaseModel):
     gaps: list[KeywordGapRow]
 
 
+class KeywordCoverageRow(BaseModel):
+    keyword_id: uuid.UUID
+    capture_id: uuid.UUID
+    captured_at: datetime
+    geo_code: str
+    device_profile: DeviceProfile
+    owned_present: bool
+    competitor_present: bool
+    owned_organic_present: bool
+    competitor_organic_present: bool
+    owned_paid_present: bool
+    competitor_paid_present: bool
+    owned_result_ids: list[uuid.UUID]
+    competitor_result_ids: list[uuid.UUID]
+    source_job_id: str | None
+    parser_version: str | None
+
+
+class KeywordCoverageSummary(BaseModel):
+    owned_product_id: uuid.UUID
+    competitor_product_id: uuid.UUID
+    keyword_count: int
+    contexts_checked: int
+    owned_present_count: int
+    competitor_present_count: int
+    both_present_count: int
+    owned_only_count: int
+    competitor_only_count: int
+    neither_count: int
+    owned_organic_count: int
+    competitor_organic_count: int
+    owned_paid_count: int
+    competitor_paid_count: int
+    owned_organic_coverage_percent: float
+    competitor_organic_coverage_percent: float
+    owned_paid_coverage_percent: float
+    competitor_paid_coverage_percent: float
+    contexts: list[KeywordCoverageRow]
+
+
 class BadgeEventRead(ReadModel):
     id: uuid.UUID
     keyword_id: uuid.UUID

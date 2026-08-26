@@ -31,6 +31,7 @@ from novel_signal.modules.rank_visibility.schemas import (
     CaptureIngest,
     CaptureList,
     CaptureSummary,
+    KeywordCoverageSummary,
     KeywordGapAnalysis,
     NewEntrantList,
     NewEntrantRead,
@@ -288,6 +289,28 @@ def keyword_gaps(
 ) -> KeywordGapAnalysis:
     return execute(
         lambda: service.keyword_gaps(
+            owned_product_id=owned_product_id,
+            competitor_product_id=competitor_product_id,
+            geo_code=geo_code,
+            device_profile=device_profile,
+            from_at=from_at,
+            to_at=to_at,
+        )
+    )
+
+
+@router.get("/keyword-coverage", response_model=KeywordCoverageSummary)
+def keyword_coverage(
+    service: ServiceDep,
+    owned_product_id: uuid.UUID,
+    competitor_product_id: uuid.UUID,
+    geo_code: str | None = None,
+    device_profile: DeviceProfile | None = None,
+    from_at: FromDate = None,
+    to_at: ToDate = None,
+) -> KeywordCoverageSummary:
+    return execute(
+        lambda: service.keyword_coverage(
             owned_product_id=owned_product_id,
             competitor_product_id=competitor_product_id,
             geo_code=geo_code,

@@ -187,3 +187,98 @@ def test_intelligence_identity_validation_is_explicit(s3: S3Context) -> None:
         f"?capture_id=00000000-0000-0000-0000-000000000001&brand=Novel&product_id={s3.product.id}"
     )
     assert sov.status_code == 422
+
+
+def test_keyword_coverage_uses_latest_observed_contexts_and_lineage(s3: S3Context) -> None:
+    second = Keyword(
+        keyword_text="gentle wipes",
+        normalized_text="gentle wipes",
+        marketplace=Marketplace.AMAZON_IN,
+        tier=TrackingTier.T1,
+        tracking_status=KeywordTrackingStatus.ACTIVE,
+        intent_cluster=IntentCluster.GENERIC_CATEGORY,
+    )
+    s3.session.add(second)
+    s3.session.commit()
+    _capture(
+        s3,
+        keyword=s3.keyword,
+        key="coverage-historical",
+        captured_at="2026-08-23T10:00:00Z",
+        rows=[_row(1, "OWN1", "organic", "Novel")],
+    )
+    latest = _capture(
+        s3,
+        keyword=s3.keyword,
+        key="coverage-latest",
+        captured_at="2026-08-23T11:00:00Z",
+        rows=[
+            _row(1, "OWN1", "organic", "Novel"),
+            _row(2, "COMP1", "organic", "Acme"),
+            _row(3, "COMP1", "sponsored_product", "Acme"),
+        ],
+    )
+    _capture(
+        s3,
+        keyword=second,
+        key="coverage-second-keyword",
+        captured_at="2026-08-23T12:00:00Z",
+        rows=[_row(1, "COMP1", "organic", "Acme")],
+    )
+    response = s3.client.get(
+        "/api/v1/rank-visibility/keyword-coverage",
+        params={
+            "owned_product_id": str(s3.product.id),
+            "competitor_product_id": str(s3.competitor_product.id),
+        },
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["keyword_count"] == body["contexts_checked"] == 2
+    assert body["owned_present_count"] == 1
+    assert body["competitor_present_count"] == 2
+    assert body["both_present_count"] == 1
+    assert body["owned_only_count"] == body["neither_count"] == 0
+    assert body["competitor_only_count"] == 1
+    assert body["owned_organic_coverage_percent"] == 50.0
+    assert body["competitor_organic_coverage_percent"] == 100.0
+    assert body["owned_paid_coverage_percent"] == 0.0
+    assert body["competitor_paid_coverage_percent"] == 50.0
+    current = next(row for row in body["contexts"] if row["keyword_id"] == str(s3.keyword.id))
+    assert current["capture_id"] == latest["id"]
+    assert len(current["owned_result_ids"]) == 1
+    assert len(current["competitor_result_ids"]) == 2
+    assert current["source_job_id"] == "job-coverage-latest"
+
+
+def test_keyword_coverage_empty_observations_and_context_filters(s3: S3Context) -> None:
+    empty = s3.client.get(
+        "/api/v1/rank-visibility/keyword-coverage",
+        params={
+            "owned_product_id": str(s3.product.id),
+            "competitor_product_id": str(s3.competitor_product.id),
+        },
+    )
+    assert empty.status_code == 200
+    body = empty.json()
+    assert body["keyword_count"] == body["contexts_checked"] == 0
+    assert body["contexts"] == []
+    assert all(value == 0.0 for key, value in body.items() if key.endswith("coverage_percent"))
+
+    _capture(
+        s3,
+        keyword=s3.keyword,
+        key="coverage-mobile",
+        captured_at="2026-08-24T10:00:00Z",
+        rows=[_row(1, "COMP1", "organic", "Acme")],
+    )
+    filtered = s3.client.get(
+        "/api/v1/rank-visibility/keyword-coverage",
+        params={
+            "owned_product_id": str(s3.product.id),
+            "competitor_product_id": str(s3.competitor_product.id),
+            "device_profile": "mobile",
+        },
+    )
+    assert filtered.status_code == 200
+    assert filtered.json()["contexts_checked"] == 0
