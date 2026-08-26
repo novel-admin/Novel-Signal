@@ -242,6 +242,7 @@ class CollectionLifecycleService:
 
         item = CollectionWorkItem(
             job_id=job.id,
+            attempt_id=attempt.id,
             job_type=job.job_type,
             platform=job.platform,
             keyword_id=job.keyword_id,
