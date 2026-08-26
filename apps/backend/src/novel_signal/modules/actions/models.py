@@ -136,3 +136,38 @@ class ActionImpact(Base):
     measured_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+
+
+class ActionDraft(Base):
+    """Evidence-constrained advisory draft; never an executable instruction."""
+
+    __tablename__ = "action_drafts"
+    __table_args__ = (
+        UniqueConstraint("input_fingerprint", name="uq_action_drafts_input_fingerprint"),
+        CheckConstraint(
+            "gap_id IS NOT NULL OR action_id IS NOT NULL", name="action_draft_origin_required"
+        ),
+        CheckConstraint(
+            "status IN ('draft', 'accepted', 'rejected')", name="action_draft_status_valid"
+        ),
+        Index("ix_action_drafts_status_created_at", "status", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    gap_id: Mapped[str | None] = mapped_column(ForeignKey("gaps.id"), nullable=True)
+    action_id: Mapped[str | None] = mapped_column(ForeignKey("actions.id"), nullable=True)
+    input_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    provider: Mapped[str] = mapped_column(String(80), nullable=False, default="deterministic")
+    model_name: Mapped[str | None] = mapped_column(String(120))
+    prompt_version: Mapped[str] = mapped_column(String(80), nullable=False, default="v1")
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="draft")
+    explanation: Mapped[str] = mapped_column(Text, nullable=False)
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    recommended_steps: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    evidence: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    uncertainty_note: Mapped[str] = mapped_column(Text, nullable=False)
+    accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    rejected_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )

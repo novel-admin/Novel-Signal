@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 
 import pytest
 from novel_signal.db import Base
+from novel_signal.modules.collection import runner
 from novel_signal.modules.collection.execution import (
     CollectionExecutionError,
     CollectionExecutionResult,
@@ -29,7 +30,6 @@ from novel_signal.modules.keywords.models import (
     KeywordTrackingStatus,
 )
 from novel_signal.modules.universe.models import Marketplace, TrackingTier
-from novel_signal.tasks import collection as collection_tasks
 from sqlalchemy import Engine, create_engine, event, select
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
@@ -117,24 +117,18 @@ class QuarantineExecutor:
         )
 
 
-def test_celery_execution_marks_job_succeeded(
+def test_scheduled_execution_marks_job_succeeded(
     engine: Engine, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     factory = sessionmaker(bind=engine, expire_on_commit=False)
-    monkeypatch.setattr(collection_tasks, "SessionLocal", factory)
-    collection_tasks.celery_app.conf.update(
-        broker_url="memory://",
-        result_backend="cache+memory://",
-        task_always_eager=True,
-        task_store_eager_result=True,
-    )
+    monkeypatch.setattr(runner, "SessionLocal", factory)
     register_executor("amazon_in", CollectionJobType.SERP, SuccessfulExecutor)
 
     with factory() as session:
         job = seed_job(session)
         job_id = job.id
 
-    result = collection_tasks.run_collection_job.apply(args=[str(job_id)]).get()
+    result = runner.run_collection_job(job_id)
     assert result["status"] == "succeeded"
 
     with factory() as session:
@@ -150,20 +144,14 @@ def test_challenge_is_recorded_and_not_bypassed(
     engine: Engine, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     factory = sessionmaker(bind=engine, expire_on_commit=False)
-    monkeypatch.setattr(collection_tasks, "SessionLocal", factory)
-    collection_tasks.celery_app.conf.update(
-        broker_url="memory://",
-        result_backend="cache+memory://",
-        task_always_eager=True,
-        task_store_eager_result=True,
-    )
+    monkeypatch.setattr(runner, "SessionLocal", factory)
     register_executor("amazon_in", CollectionJobType.SERP, ChallengeExecutor)
 
     with factory() as session:
         job = seed_job(session, max_attempts=1)
         job_id = job.id
 
-    result = collection_tasks.run_collection_job.apply(args=[str(job_id)]).get()
+    result = runner.run_collection_job(job_id)
     assert result["status"] == "failed"
     assert result["error_code"] == "marketplace_challenge"
 
@@ -181,13 +169,7 @@ def test_quarantine_result_marks_job_and_attempt_quarantined(
     engine: Engine, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     factory = sessionmaker(bind=engine, expire_on_commit=False)
-    monkeypatch.setattr(collection_tasks, "SessionLocal", factory)
-    collection_tasks.celery_app.conf.update(
-        broker_url="memory://",
-        result_backend="cache+memory://",
-        task_always_eager=True,
-        task_store_eager_result=True,
-    )
+    monkeypatch.setattr(runner, "SessionLocal", factory)
 
     with factory() as session:
         job = seed_job(session)
@@ -214,7 +196,7 @@ def test_quarantine_result_marks_job_and_attempt_quarantined(
         CollectionJobType.SERP,
         lambda: QuarantineExecutor(raw_id, parser_id),
     )
-    result = collection_tasks.run_collection_job.apply(args=[str(job_id)]).get()
+    result = runner.run_collection_job(job_id)
     assert result["status"] == "quarantined"
 
     with factory() as session:

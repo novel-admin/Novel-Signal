@@ -5,10 +5,13 @@ from sqlalchemy.orm import Session
 
 from novel_signal.db import get_db
 
-from . import repository, service
+from . import advisory, repository, service
 from .schemas import (
     ActionCreate,
     ActionDetail,
+    ActionDraftCreate,
+    ActionDraftDecision,
+    ActionDraftRead,
     ActionRead,
     ActionTransition,
     ChangeEventCreate,
@@ -160,3 +163,33 @@ def transition(
         return ActionRead.model_validate(service.transition_action(session, row, data))
     except service.ActionsError as error:
         raise _expected_error(error) from error
+
+
+@router.get("/action-drafts", response_model=list[ActionDraftRead])
+def action_drafts(
+    limit: int = Query(50, ge=1, le=100), session: Session = Depends(get_db)
+) -> list[ActionDraftRead]:
+    drafts = advisory.list_drafts(session, limit=limit)
+    return [ActionDraftRead.model_validate(item) for item in drafts]
+
+
+@router.post("/action-drafts", response_model=ActionDraftRead, status_code=status.HTTP_201_CREATED)
+def create_action_draft(
+    data: ActionDraftCreate, session: Session = Depends(get_db)
+) -> ActionDraftRead:
+    try:
+        return ActionDraftRead.model_validate(advisory.create_draft(session, data))
+    except advisory.ActionDraftError as error:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
+
+
+@router.post("/action-drafts/{draft_id}/decision", response_model=ActionDraftRead)
+def decide_action_draft(
+    draft_id: str, data: ActionDraftDecision, session: Session = Depends(get_db)
+) -> ActionDraftRead:
+    try:
+        return ActionDraftRead.model_validate(
+            advisory.decide_draft(session, draft_id, accepted=data.accepted)
+        )
+    except advisory.ActionDraftError as error:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error

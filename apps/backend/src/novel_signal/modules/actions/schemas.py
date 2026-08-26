@@ -113,3 +113,38 @@ class ImpactCreate(BaseModel):
     baseline: float | None = None
     observed: float | None = None
     outcome: Literal["improved", "no_change", "worsened"]
+
+
+class ActionDraftCreate(BaseModel):
+    gap_id: str | None = None
+    action_id: str | None = None
+    signal_type: str = Field(min_length=1, max_length=120)
+    evidence: dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def origin_is_present(self) -> "ActionDraftCreate":
+        if not self.gap_id and not self.action_id:
+            raise ValueError("gap_id or action_id is required")
+        return self
+
+
+class ActionDraftRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    gap_id: str | None
+    action_id: str | None
+    provider: str
+    model_name: str | None
+    prompt_version: str
+    status: Literal["draft", "accepted", "rejected"]
+    explanation: str
+    title: str
+    recommended_steps: list[str]
+    evidence: dict[str, Any]
+    uncertainty_note: str
+    created_at: datetime
+
+
+class ActionDraftDecision(BaseModel):
+    accepted: bool

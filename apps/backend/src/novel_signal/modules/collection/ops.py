@@ -5,14 +5,12 @@ from datetime import UTC, datetime, timedelta
 
 import boto3  # type: ignore[import-untyped]
 from botocore.exceptions import BotoCoreError, ClientError  # type: ignore[import-untyped]
-from redis import Redis
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from novel_signal.config import Settings, get_settings
 from novel_signal.modules.collection.models import CollectionJobStatus, RawEvidence
 from novel_signal.modules.collection.repository import CollectionRepository
-from novel_signal.tasks.celery_app import celery_app
 
 
 @dataclass(frozen=True)
@@ -190,25 +188,7 @@ def runtime_readiness(
             type(error).__name__,
         )
 
-    # Redis
-    try:
-        redis_client = Redis.from_url(
-            config.redis_url,
-            socket_connect_timeout=1,
-            socket_timeout=1,
-        )
-
-        redis_client.ping()
-
-        results["redis"] = _readiness_item("ready")
-
-    except Exception as error:  # pragma: no cover
-        results["redis"] = _readiness_item(
-            "down",
-            type(error).__name__,
-        )
-
-    # MinIO / S3-compatible storage
+    # Supabase Storage uses the same S3-compatible boundary as local MinIO.
     try:
         s3 = boto3.client(
             "s3",
@@ -252,17 +232,7 @@ def runtime_readiness(
             type(error).__name__,
         )
 
-    # Celery config
-    broker = str(celery_app.conf.broker_url or "")
-
-    results["celery"] = (
-        _readiness_item("ready")
-        if broker
-        else _readiness_item(
-            "down",
-            "broker_not_configured",
-        )
-    )
+    results["scheduler"] = _readiness_item("ready", "database_backed_render_cron")
 
     overall = "ready" if all(item["status"] == "ready" for item in results.values()) else "degraded"
 

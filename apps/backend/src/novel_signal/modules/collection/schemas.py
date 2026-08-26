@@ -151,9 +151,8 @@ class DependencyReadiness(BaseModel):
 class CollectionReadinessRead(BaseModel):
     status: str
     postgres: DependencyReadiness
-    redis: DependencyReadiness
     object_store: DependencyReadiness
-    celery: DependencyReadiness
+    scheduler: DependencyReadiness
 
 
 class CollectionFailureList(BaseModel):

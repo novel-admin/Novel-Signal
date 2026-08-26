@@ -15,7 +15,6 @@ class Settings(BaseSettings):
     dashboard_auth_cookie: str = "novel_signal_dashboard"
     cors_origins: str = "http://localhost:3000"
     database_url: str = "postgresql+psycopg://novel_signal:novel_signal@localhost:5432/novel_signal"
-    redis_url: str = "redis://localhost:6379/0"
     object_store_endpoint: str = "http://localhost:9000"
     object_store_bucket: str = "novel-signal-raw"
     object_store_access_key: SecretStr = SecretStr("novel_signal")
@@ -39,6 +38,7 @@ class Settings(BaseSettings):
     google_serp_competitor_domains: str = ""
     collector_timeout_seconds: int = 45
     collector_max_attempts: int = 3
+    collection_batch_size: int = 50
     collector_failure_rate_warn_threshold: float = 0.05
     collector_freshness_warn_minutes: int = 60
     collector_completeness_warn_ratio: float = 0.98
@@ -58,6 +58,12 @@ class Settings(BaseSettings):
     amazon_ads_profile_ids: str = ""
     google_search_console_credentials_json: SecretStr = SecretStr("")
     google_search_console_sites: str = ""
+    google_ads_developer_token: SecretStr = SecretStr("")
+    google_ads_client_id: str = ""
+    google_ads_client_secret: SecretStr = SecretStr("")
+    google_ads_refresh_token: SecretStr = SecretStr("")
+    google_ads_customer_id: str = ""
+    google_ads_login_customer_id: str = ""
     meta_app_id: str = ""
     meta_app_secret: SecretStr = SecretStr("")
     meta_access_token: SecretStr = SecretStr("")
