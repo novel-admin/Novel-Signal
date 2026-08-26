@@ -44,6 +44,7 @@ async def dashboard_access_middleware(
             settings.app_env not in {"development", "test"}
             or settings.dashboard_access_code.get_secret_value()
         )
+        and request.method != "OPTIONS"
         and request.url.path.startswith(protected_prefix)
         and request.url.path not in public_paths
         and not is_authenticated(request.cookies.get(settings.dashboard_auth_cookie), settings)

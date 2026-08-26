@@ -42,10 +42,19 @@ def main() -> int:
                 session.add(User(email="demo@demo.com", password_hash=password_hash("demo123")))
             if session.query(ScorecardCell).count() == 0:
                 session.add_all([
-                    ScorecardCell(level="product", entity_id="demo-novel", dimension="visibility", score=82, band="strong", direction="up", velocity=4.2, confidence="measured", evidence={"demo": True}),
-                    ScorecardCell(level="product", entity_id="demo-novel", dimension="content", score=68, band="watch", direction="flat", velocity=0.0, confidence="derived", evidence={"demo": True}),
-                    ScorecardCell(level="competitor", entity_id="demo-competitor", dimension="visibility", score=74, band="watch", direction="down", velocity=-2.1, confidence="measured", evidence={"demo": True}),
+                    ScorecardCell(level="sku", entity_id="demo-novel", dimension="visibility", score=82, band="leading", direction="up", velocity=4.2, confidence="measured", evidence={"demo": True}),
+                    ScorecardCell(level="sku", entity_id="demo-novel", dimension="content", score=68, band="competitive", direction="flat", velocity=0.0, confidence="derived", evidence={"demo": True}),
+                    ScorecardCell(level="sku", entity_id="demo-competitor", dimension="visibility", score=74, band="competitive", direction="down", velocity=-2.1, confidence="measured", evidence={"demo": True}),
                 ])
+            else:
+                # Repair older demo seeds created before the public enum contract was enforced.
+                for cell in session.query(ScorecardCell).all():
+                    if cell.level == "product":
+                        cell.level = "sku"
+                    if cell.band == "strong":
+                        cell.band = "leading"
+                    elif cell.band == "watch":
+                        cell.band = "competitive"
             gap = session.query(Gap).filter_by(fingerprint="demo-gap-ranking").one_or_none()
             if gap is None:
                 gap = Gap(fingerprint="demo-gap-ranking", dimension="rank_visibility", entity_id="demo-novel", benchmark_value={"rank": 3}, current_value={"rank": 8}, gap_size=5, revenue_at_stake=12500, root_cause="competitor momentum", confidence="derived", evidence={"demo": True})
