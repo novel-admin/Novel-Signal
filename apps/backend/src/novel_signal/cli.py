@@ -172,11 +172,9 @@ def _seed_all_empty_tables(session: Session) -> int:
             values["gap_id"] = ids["gaps"]
         try:
             with session.begin_nested():
-                result = session.execute(table.insert().values(**values))
+                session.execute(table.insert().values(**values))
                 session.flush()
             inserted_id = values.get(next(iter(table.primary_key)).name)
-            if inserted_id is None and result.inserted_primary_key:
-                inserted_id = result.inserted_primary_key[0]
             ids[table.name] = inserted_id
             seeded += 1
         except Exception:
