@@ -179,6 +179,19 @@ def test_target_policy_accepts_hostname_and_rejects_confusable_hosts() -> None:
     with pytest.raises(UnsupportedTargetError):
         target_policy.validate(url="https://www.amazon.in/", page_type="product_page")
 
+    for internal_url in (
+        "http://localhost/x",
+        "http://127.0.0.1/x",
+        "http://169.254.169.254/x",
+        "http://10.0.0.1/x",
+    ):
+        internal_policy = BrowserTargetPolicy(
+            allowed_domains=frozenset({internal_url.split("/")[2]}),
+            allowed_page_types=frozenset({"public_web_page"}),
+        )
+        with pytest.raises(UnsupportedTargetError):
+            internal_policy.validate(url=internal_url, page_type="public_web_page")
+
 
 @pytest.mark.asyncio
 async def test_profile_context_options_cover_desktop_mobile_and_geo() -> None:
@@ -271,6 +284,19 @@ async def test_non_allowlisted_target_is_rejected_before_browser_navigation() ->
         await session.capture(request(url="https://amazon.in.evil.example/"))
 
     assert browser.contexts == []
+
+
+@pytest.mark.asyncio
+async def test_redirect_outside_allowlist_is_rejected_and_context_discarded() -> None:
+    page = FakePage(final_url="https://evil.example/redirect")
+    session, browser = session_with_pages([page])
+
+    with pytest.raises(UnsupportedTargetError):
+        await session.capture(request())
+
+    assert page.closed is True
+    assert browser.contexts[0].closed is True
+    assert session.active_context_count == 0
 
 
 @pytest.mark.asyncio
