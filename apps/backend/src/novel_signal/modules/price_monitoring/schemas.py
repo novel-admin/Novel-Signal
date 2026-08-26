@@ -251,3 +251,19 @@ class PriceComparison(BaseModel):
     competitor: PriceSide
     deltas: dict[str, Decimal | int | None]
     signals: list[str]
+
+
+class PricePerUnitSide(BaseModel):
+    observation_id: uuid.UUID
+    price: Money
+    pack_quantity: int | None
+    pack_unit: str | None
+    price_per_unit: Money
+
+
+class PricePerUnitComparison(BaseModel):
+    owned: PricePerUnitSide
+    competitor: PricePerUnitSide
+    comparable: bool
+    unit: str | None
+    difference: Money

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import ipaddress
 import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
@@ -160,6 +161,8 @@ class BrowserTargetPolicy:
         ):
             raise UnsupportedTargetError("Target URL is not a supported public HTTP URL.")
         normalized_hostname = hostname.rstrip(".").lower()
+        if _is_internal_hostname(normalized_hostname):
+            raise UnsupportedTargetError("Internal target hostnames are not supported.")
         if not any(
             normalized_hostname == domain or normalized_hostname.endswith(f".{domain}")
             for domain in self.allowed_domains
@@ -288,6 +291,7 @@ class PlaywrightBrowserSession:
                 )
                 if response is None:
                     raise BrowserNavigationError("Browser navigation did not return a response.")
+                self.policy.validate(url=page.url, page_type=request.page_type)
                 result = await self._capture_response(page, response, request)
                 if result.challenge_detected:
                     await self._discard_context(request.profile.profile_id)
@@ -440,3 +444,13 @@ def _is_valid_hostname(hostname: str) -> bool:
         and all(character.isalnum() or character == "-" for character in label)
         for label in labels
     )
+
+
+def _is_internal_hostname(hostname: str) -> bool:
+    if hostname == "localhost" or hostname.endswith((".localhost", ".local", ".internal")):
+        return True
+    try:
+        address = ipaddress.ip_address(hostname)
+    except ValueError:
+        return False
+    return not address.is_global

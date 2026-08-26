@@ -26,6 +26,14 @@ class Settings(BaseSettings):
     amazon_in_pincode: str = ""
     amazon_in_location_label: str = ""
     amazon_in_device_profile: str = "desktop"
+    google_serp_concurrency: int = 1
+    google_serp_min_delay_seconds: int = 8
+    google_serp_geo_code: str = "IN"
+    google_serp_device_profile: str = "desktop"
+    google_serp_locale: str = "en-IN"
+    google_serp_timezone_id: str = "Asia/Kolkata"
+    google_serp_novel_domains: str = ""
+    google_serp_competitor_domains: str = ""
     collector_timeout_seconds: int = 45
     collector_max_attempts: int = 3
     collector_failure_rate_warn_threshold: float = 0.05

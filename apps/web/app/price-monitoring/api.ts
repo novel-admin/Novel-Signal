@@ -1,7 +1,8 @@
-import type {Comparison,Event,HistoryRow,List,Observation,ProductOption} from "./types";
+import type {Comparison,Event,HistoryRow,List,Observation,PricePerUnitComparison,ProductOption} from "./types";
 const base="/api/v1";
 function message(body:unknown,status:number){if(body&&typeof body==="object"&&"detail" in body){const d=(body as {detail:unknown}).detail;if(d&&typeof d==="object"&&"message" in d)return String((d as {message:unknown}).message)}return `Request failed (${status})`}
 export async function request<T>(path:string):Promise<T>{const response=await fetch(`${base}${path}`,{cache:"no-store"});const body:unknown=await response.json().catch(()=>null);if(!response.ok)throw new Error(message(body,response.status));return body as T}
 export async function dashboard(){const [observations,events,products,competitors]=await Promise.all([request<List<Observation>>("/price-monitoring/observations?limit=200"),request<List<Event>>("/price-monitoring/events?limit=200"),request<List<ProductOption>>("/universe/products?limit=200"),request<List<ProductOption>>("/universe/competitor-products?limit=200")]);return {observations,events,products:products.items,competitors:competitors.items}}
 export const history=(query:string)=>request<List<HistoryRow>>(`/price-monitoring/history?${query}`);
 export const comparison=(product:string,competitor:string,geo:string)=>request<Comparison>(`/price-monitoring/comparison?product_id=${product}&competitor_product_id=${competitor}${geo?`&geo_code=${encodeURIComponent(geo)}`:""}`);
+export const pricePerUnit=(product:string,competitor:string,geo:string)=>request<PricePerUnitComparison>(`/price-monitoring/price-per-unit?product_id=${product}&competitor_product_id=${competitor}${geo?`&geo_code=${encodeURIComponent(geo)}`:""}`);
