@@ -12,7 +12,6 @@ from novel_signal.modules.collection.models import CollectionFailureType, Collec
 @dataclass(frozen=True)
 class CollectionWorkItem:
     job_id: uuid.UUID
-    attempt_id: uuid.UUID
     job_type: CollectionJobType
     platform: str
     keyword_id: uuid.UUID | None

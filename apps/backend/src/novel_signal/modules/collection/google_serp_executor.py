@@ -72,6 +72,14 @@ class GoogleSerpExecutor:
 
     async def execute(self, item: CollectionWorkItem) -> CollectionExecutionResult:
         self._validate_item(item)
+        attempt_id = item.attempt_id
+        if attempt_id is None:
+            raise CollectionExecutionError(
+                "Google SERP collection requires a claimed attempt",
+                failure_type=CollectionFailureType.VALIDATION_ERROR,
+                code="google_serp_attempt_required",
+                retryable=False,
+            )
         keyword = self._keyword(item)
         profile = self._profile()
         parser = self._parser()
@@ -148,7 +156,7 @@ class GoogleSerpExecutor:
         try:
             return pipeline.process(
                 job_id=item.job_id,
-                attempt_id=item.attempt_id,
+                attempt_id=attempt_id,
                 platform=self.PLATFORM,
                 request=CaptureRequest(
                     url=browser_capture.requested_url,

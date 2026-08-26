@@ -87,6 +87,9 @@ class AmazonProductExecutor:
 
     async def execute(self, item: CollectionWorkItem) -> CollectionExecutionResult:
         self._validate_item(item)
+        attempt_id = item.attempt_id
+        if attempt_id is None:
+            raise self._target_invalid()
         target = self._target(item)
         profile = self._profile()
         try:
@@ -165,7 +168,7 @@ class AmazonProductExecutor:
         try:
             return pipeline.process(
                 job_id=item.job_id,
-                attempt_id=item.attempt_id,
+                attempt_id=attempt_id,
                 platform=self.PLATFORM,
                 request=CaptureRequest(
                     url=browser_capture.requested_url,
