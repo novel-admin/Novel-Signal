@@ -26,5 +26,8 @@ export function transitionAction(id: string, status: Action["status"], note?: st
 
 export type OperationsModule = { module: string; owner: string; status: string };
 export const loadOperations = () => request<OperationsModule>("/collection/meta");
-export const loadJobs = () => request<Array<{ id: string; page_type: string; target_id: string; status: string; attempts: number; scheduled_at: string; failure_reason: string | null }>>("/collection/jobs");
-export const loadCaptures = () => request<Array<{ id: string; page_type: string; target_id: string; status: string; captured_at: string; failure_reason: string | null }>>("/collection/captures");
+type CollectionPage<T> = { items: T[] };
+export type OperationsJob = { id: string; job_type: string; keyword_id: string | null; product_id: string | null; competitor_product_id: string | null; status: string; attempt_count: number; scheduled_for: string; last_error_message: string | null };
+export type OperationsCapture = { id: string; evidence_type: string; job_id: string; captured_at: string; challenge_detected: boolean };
+export const loadJobs = async () => (await request<CollectionPage<OperationsJob>>("/collection/jobs")).items;
+export const loadCaptures = async () => (await request<CollectionPage<OperationsCapture>>("/collection/raw-evidence")).items;
