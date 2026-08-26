@@ -12,7 +12,7 @@ from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
 from sqlalchemy import Enum as SAEnum
-from sqlalchemy import String
+from sqlalchemy import String, update
 from sqlalchemy.sql.sqltypes import JSON as JSONType
 
 from novel_signal.config import get_settings
@@ -119,7 +119,7 @@ def _demo_value(column, table_name: str, row_number: int, ids: dict[str, object]
     if lowered == "currency":
         return "INR"
     if "url" in lowered:
-        return "https://www.amazon.in/dp/B0DEMO00001"
+        return "https://www.amazon.in/dp/B0DEMO0001"
     if lowered in {"status", "publication_status"}:
         if table_name == "action_drafts":
             return "proposed"
@@ -194,6 +194,12 @@ def main() -> int:
         return 1 if result.failed else 0
     if args.command == "seed-demo":
         with SessionLocal() as session:
+            # Repair early demo identifiers; Amazon ASINs are exactly 10 characters.
+            for table in Base.metadata.tables.values():
+                if "marketplace_product_id" in table.c:
+                    session.execute(update(table).where(table.c.marketplace_product_id == "B0NOVEL00001").values(marketplace_product_id="B0NOVL0001"))
+                    session.execute(update(table).where(table.c.marketplace_product_id == "B0COMP00001").values(marketplace_product_id="B0COMP0001"))
+                    session.execute(update(table).where(table.c.marketplace_product_id == "B0DEMO00001").values(marketplace_product_id="B0DEMO0001"))
             user = session.query(User).filter_by(email="demo@demo.com").one_or_none()
             if user is None:
                 user = User(email="demo@demo.com", password_hash=password_hash("demo123"))
@@ -204,7 +210,7 @@ def main() -> int:
                 product = Product(
                     internal_sku="NOVEL-DEMO-001", name="Novel Premium Care Wipes", brand="Novel",
                     category="Personal Care", marketplace=Marketplace.AMAZON_IN,
-                    marketplace_product_id="B0NOVEL00001", product_url="https://www.amazon.in/dp/B0NOVEL00001",
+                    marketplace_product_id="B0NOVL0001", product_url="https://www.amazon.in/dp/B0NOVL0001",
                     pack_quantity=3, pack_unit="packs", tracking_tier=TrackingTier.T1,
                 )
                 session.add(product)
@@ -214,12 +220,12 @@ def main() -> int:
                 competitor = Competitor(name="CarePlus India", parent_company="CarePlus", positioning_tier=PositioningTier.MID, threat_rating=4, category_presence="Personal Care")
                 session.add(competitor)
                 session.flush()
-            competitor_product = session.query(CompetitorProduct).filter_by(marketplace_product_id="B0COMP00001").one_or_none()
+            competitor_product = session.query(CompetitorProduct).filter_by(marketplace_product_id="B0COMP0001").one_or_none()
             if competitor_product is None:
                 competitor_product = CompetitorProduct(
                     competitor_id=competitor.id, name="CarePlus Sensitive Wipes", brand="CarePlus",
                     category="Personal Care", marketplace=Marketplace.AMAZON_IN,
-                    marketplace_product_id="B0COMP00001", product_url="https://www.amazon.in/dp/B0COMP00001",
+                    marketplace_product_id="B0COMP0001", product_url="https://www.amazon.in/dp/B0COMP0001",
                     pack_quantity=3, pack_unit="packs", tracking_tier=TrackingTier.T1,
                 )
                 session.add(competitor_product)
