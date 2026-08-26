@@ -126,6 +126,7 @@ Every published observation should include:
 
 ## Frontend Practices
 
+- Use shadcn available components rather than creating new one's.
 - Use the existing Next.js, React, and TypeScript structure.
 - Reuse current API helpers and visual patterns.
 - Do not add a new UI framework or state library without approval.

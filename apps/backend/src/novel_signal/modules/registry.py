@@ -3,6 +3,7 @@ from fastapi import APIRouter
 from novel_signal.modules.actions.router import router as actions_router
 from novel_signal.modules.ads.router import router as ads_router
 from novel_signal.modules.alerts.router import router as alerts_router
+from novel_signal.modules.auth.router import router as auth_router
 from novel_signal.modules.collection.router import router as collection_router
 from novel_signal.modules.commerce.router import router as commerce_router
 from novel_signal.modules.keywords.router import router as keywords_router
@@ -18,6 +19,7 @@ from novel_signal.modules.visibility.router import router as visibility_router
 
 module_routers: tuple[APIRouter, ...] = (
     universe_router,
+    auth_router,
     keywords_router,
     rank_visibility_router,
     visibility_router,
