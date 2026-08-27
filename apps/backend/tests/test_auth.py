@@ -1,8 +1,20 @@
 import novel_signal.main as main_module
 from fastapi.testclient import TestClient
 from novel_signal.config import Settings, get_settings
+from novel_signal.db import Base
 from novel_signal.main import app
-from novel_signal.modules.auth.service import access_token, is_authenticated
+from novel_signal.modules.auth.models import User
+from novel_signal.modules.auth.router import PasswordChangeRequest, change_password
+from novel_signal.modules.auth.service import (
+    access_token,
+    is_authenticated,
+    password_hash,
+    verify_password,
+)
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session
+from sqlalchemy.pool import StaticPool
+from starlette.requests import Request
 
 
 def test_dashboard_access_is_disabled_without_a_code(monkeypatch) -> None:
@@ -42,3 +54,41 @@ def test_dashboard_token_expires(monkeypatch) -> None:
 
     assert not is_authenticated(expired, configured)
     assert not is_authenticated(future, configured)
+
+
+def test_password_change_requires_current_password(monkeypatch) -> None:
+    configured = Settings(internal_auth_secret="test-secret")
+    monkeypatch.setattr("novel_signal.modules.auth.router.get_settings", lambda: configured)
+    engine = create_engine(
+        "sqlite+pysqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    Base.metadata.create_all(engine)
+    with Session(engine) as session:
+        user = User(email="user@example.com", password_hash=password_hash("old-password"))
+        session.add(user)
+        session.commit()
+        request = Request(
+            {
+                "type": "http",
+                "headers": [
+                    (
+                        b"cookie",
+                        (
+                            f"{configured.dashboard_auth_cookie}="
+                            f"{access_token(configured, user.email)}"
+                        ).encode(),
+                    )
+                ],
+            }
+        )
+        result = change_password(
+            PasswordChangeRequest(current_password="old-password", new_password="new-password"),
+            request,
+            session,
+        )
+        assert result == {"changed": True}
+        assert verify_password("new-password", user.password_hash)
+    Base.metadata.drop_all(engine)
+    engine.dispose()
