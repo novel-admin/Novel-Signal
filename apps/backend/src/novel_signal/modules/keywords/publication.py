@@ -7,13 +7,14 @@ from dataclasses import dataclass
 from datetime import UTC
 from typing import Any
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
 from novel_signal.db import SessionLocal
 from novel_signal.modules.collection.models import RawEvidence
 from novel_signal.modules.collection.pipeline import PublishContext
+from novel_signal.modules.keywords.intent import classify_keyword_intent
 from novel_signal.modules.keywords.models import (
-    IntentCluster,
     Keyword,
     KeywordSource,
     KeywordSourceType,
@@ -21,7 +22,12 @@ from novel_signal.modules.keywords.models import (
 )
 from novel_signal.modules.keywords.repository import KeywordRepository
 from novel_signal.modules.keywords.schemas import normalize_keyword
-from novel_signal.modules.universe.models import Marketplace, TrackingTier
+from novel_signal.modules.universe.models import (
+    CompetitorProduct,
+    Marketplace,
+    Product,
+    TrackingTier,
+)
 
 
 class KeywordPublicationError(ValueError):
@@ -34,7 +40,6 @@ class KeywordPublicationConfig:
     source_type: KeywordSourceType
     default_tier: TrackingTier
     default_tracking_status: KeywordTrackingStatus
-    default_intent_cluster: IntentCluster
 
 
 @dataclass(frozen=True)
@@ -73,6 +78,15 @@ class KeywordEvidencePublisher:
                 raise KeywordPublicationError("Raw evidence does not match the publication context")
 
             repository = KeywordRepository(session)
+            owned_brands = session.scalars(
+                select(Product.brand).where(Product.archived_at.is_(None))
+            ).all()
+            competitor_brands = session.scalars(
+                select(CompetitorProduct.brand).where(CompetitorProduct.archived_at.is_(None))
+            ).all()
+            categories = session.scalars(
+                select(Product.category).where(Product.archived_at.is_(None))
+            ).all()
             created_keywords = 0
             added_sources = 0
             for observation in observations:
@@ -87,7 +101,12 @@ class KeywordEvidencePublisher:
                         marketplace=self.config.marketplace,
                         tier=self.config.default_tier,
                         tracking_status=self.config.default_tracking_status,
-                        intent_cluster=self.config.default_intent_cluster,
+                        intent_cluster=classify_keyword_intent(
+                            observation.keyword_text,
+                            owned_brands=owned_brands,
+                            competitor_brands=competitor_brands,
+                            categories=categories,
+                        ),
                     )
                     session.add(keyword)
                     session.flush()

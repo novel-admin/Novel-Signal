@@ -102,7 +102,6 @@ def keyword_publisher(
             source_type=source_type,
             default_tier=TrackingTier.T3,
             default_tracking_status=KeywordTrackingStatus.ACTIVE,
-            default_intent_cluster=IntentCluster.UNCLASSIFIED,
         ),
         session_factory=sessionmaker(bind=engine, expire_on_commit=False),
     )

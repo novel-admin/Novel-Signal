@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import uuid
 
+from novel_signal.modules.actions.models import ChangeEvent
+from sqlalchemy import select
+
 from .conftest import Context
 
 
@@ -124,6 +127,17 @@ def test_changes_normalization_completeness_comparison_and_filters(s5: Context) 
         "video_present",
         "variation_count",
     }.issubset(fields)
+    s5.session.expire_all()
+    title_event = next(
+        item
+        for item in s5.session.scalars(select(ChangeEvent)).all()
+        if item.field_name == "title"
+    )
+    assert title_event.target_type == "product"
+    assert title_event.old_observation_type == "listing_snapshot"
+    assert title_event.new_observation_type == "listing_snapshot"
+    assert title_event.old_value == "Soft Baby Wipes"
+    assert title_event.new_value == "Soft Baby Wipes Plus"
     score = s5.client.get(
         f"/api/v1/listing-intelligence/completeness?product_id={s5.product.id}"
     ).json()
