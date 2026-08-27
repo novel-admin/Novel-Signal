@@ -1,9 +1,10 @@
 import novel_signal.main as main_module
 from fastapi.testclient import TestClient
+from novel_signal.api.dependencies import has_workspace_membership
 from novel_signal.config import Settings, get_settings
 from novel_signal.db import Base
 from novel_signal.main import app
-from novel_signal.modules.auth.models import User
+from novel_signal.modules.auth.models import User, Workspace, WorkspaceMember
 from novel_signal.modules.auth.router import PasswordChangeRequest, change_password
 from novel_signal.modules.auth.service import (
     access_token,
@@ -90,5 +91,28 @@ def test_password_change_requires_current_password(monkeypatch) -> None:
         )
         assert result == {"changed": True}
         assert verify_password("new-password", user.password_hash)
+    Base.metadata.drop_all(engine)
+    engine.dispose()
+
+
+def test_workspace_membership_is_required_for_authenticated_users(monkeypatch) -> None:
+    engine = create_engine(
+        "sqlite+pysqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    Base.metadata.create_all(engine)
+    with Session(engine) as session:
+        member = User(email="member@example.com", password_hash="hash")
+        outsider = User(email="outsider@example.com", password_hash="hash")
+        workspace = Workspace(name="Workspace")
+        session.add_all([member, outsider, workspace])
+        session.flush()
+        session.add(WorkspaceMember(user_id=member.id, workspace_id=workspace.id, role="member"))
+        session.commit()
+    monkeypatch.setattr("novel_signal.api.dependencies.SessionLocal", lambda: Session(engine))
+
+    assert has_workspace_membership("member@example.com")
+    assert not has_workspace_membership("outsider@example.com")
     Base.metadata.drop_all(engine)
     engine.dispose()

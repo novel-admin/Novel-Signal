@@ -6,9 +6,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.responses import Response
 
+from novel_signal.api.dependencies import has_workspace_membership
 from novel_signal.api.router import api_router
 from novel_signal.config import get_settings
-from novel_signal.modules.auth.service import is_authenticated
+from novel_signal.modules.auth.service import is_authenticated, token_subject
 
 
 @asynccontextmanager
@@ -47,7 +48,15 @@ async def dashboard_access_middleware(
         and request.method != "OPTIONS"
         and request.url.path.startswith(protected_prefix)
         and request.url.path not in public_paths
-        and not is_authenticated(request.cookies.get(settings.dashboard_auth_cookie), settings)
+        and not (
+            is_authenticated(request.cookies.get(settings.dashboard_auth_cookie), settings)
+            and (
+                token_subject(request.cookies.get(settings.dashboard_auth_cookie)) == "legacy"
+                or has_workspace_membership(
+                    token_subject(request.cookies.get(settings.dashboard_auth_cookie)) or ""
+                )
+            )
+        )
     ):
         return JSONResponse(status_code=401, content={"detail": "Dashboard access required"})
     return await call_next(request)

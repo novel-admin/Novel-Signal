@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from novel_signal.api.errors import api_error
 from novel_signal.config import get_settings
-from novel_signal.db import get_db
+from novel_signal.db import SessionLocal, get_db
 from novel_signal.modules.auth.models import User, Workspace, WorkspaceMember
 from novel_signal.modules.auth.service import is_authenticated, token_subject
 
@@ -66,3 +66,13 @@ def require_workspace(
 
 
 WorkspaceDep = Annotated[Workspace, Depends(require_workspace)]
+
+
+def has_workspace_membership(email: str) -> bool:
+    with SessionLocal() as session:
+        user = session.scalar(select(User).where(User.email == email, User.is_active.is_(True)))
+        if user is None:
+            return False
+        return session.scalar(
+            select(WorkspaceMember.id).where(WorkspaceMember.user_id == user.id).limit(1)
+        ) is not None
