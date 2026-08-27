@@ -29,7 +29,7 @@ from novel_signal.modules.ads.models import (
     OwnAdPerformance,
 )
 from novel_signal.modules.alerts.models import AlertEvent, AlertRule
-from novel_signal.modules.auth.models import User
+from novel_signal.modules.auth.models import User, Workspace, WorkspaceMember
 from novel_signal.modules.auth.service import password_hash
 from novel_signal.modules.collection import models as collection_models  # noqa: F401
 from novel_signal.modules.collection.runner import run_due_collection_jobs
@@ -311,6 +311,14 @@ def main() -> int:
             if user is None:
                 user = User(email="demo@demo.com", password_hash=password_hash("demo123"))
                 session.add(user)
+                session.flush()
+            workspace = session.query(Workspace).filter_by(name="Demo workspace").one_or_none()
+            if workspace is None:
+                workspace = Workspace(name="Demo workspace")
+                session.add(workspace)
+                session.flush()
+            if session.query(WorkspaceMember).filter_by(workspace_id=workspace.id, user_id=user.id).one_or_none() is None:
+                session.add(WorkspaceMember(workspace_id=workspace.id, user_id=user.id, role="owner"))
             # A small, connected Novel universe makes every downstream fixture useful.
             product = session.query(Product).filter_by(internal_sku="NOVEL-DEMO-001").one_or_none()
             if product is None:
