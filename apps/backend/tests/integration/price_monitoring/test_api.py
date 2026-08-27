@@ -1,6 +1,9 @@
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
+from novel_signal.modules.actions.models import ChangeEvent
+from sqlalchemy import select
+
 from .conftest import Context
 
 BASE = datetime.now(UTC) - timedelta(minutes=10)
@@ -119,6 +122,12 @@ def test_events_geo_history_latest_metrics_and_freshness(s6: Context) -> None:
     assert events["items"][0]["event_type"] == "price_decrease"
     assert Decimal(events["items"][0]["absolute_change"]) == Decimal("-50.00")
     assert Decimal(events["items"][0]["percent_change"]) == Decimal("-10.02")
+    s6.session.expire_all()
+    shared = s6.session.scalars(select(ChangeEvent)).all()
+    event = next(item for item in shared if item.event_type == "price_price_decrease")
+    assert event.field_name == "primary_price"
+    assert event.old_observation_type == "price_observation"
+    assert event.new_observation_type == "price_observation"
     latest = s6.client.get(
         "/api/v1/price-monitoring/latest",
         params={"product_id": str(s6.product.id), "geo_code": "560001"},
@@ -167,6 +176,9 @@ def test_availability_events_and_comparison(s6: Context) -> None:
         "/api/v1/price-monitoring/events", params={"product_id": str(s6.product.id)}
     ).json()["items"]
     assert {x["event_type"] for x in events} >= {"became_unavailable", "became_available"}
+    s6.session.expire_all()
+    availability = {item.event_type for item in s6.session.scalars(select(ChangeEvent)).all()}
+    assert {"price_became_unavailable", "price_became_available"} <= availability
     comparison = s6.client.get(
         "/api/v1/price-monitoring/comparison",
         params={

@@ -7,6 +7,7 @@ from typing import Any
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from novel_signal.modules.actions.publication import publish_change_event, target_identity
 from novel_signal.modules.listings.errors import ListingConflict, ListingNotFound, ListingValidation
 from novel_signal.modules.listings.models import (
     ListingChangeEvent,
@@ -170,20 +171,44 @@ class ListingService:
                 kind = ListingChangeType.REMOVED
             else:
                 kind = ListingChangeType.MODIFIED
-            self.session.add(
-                ListingChangeEvent(
-                    snapshot_id=new.id,
-                    previous_snapshot_id=old.id,
-                    marketplace=new.marketplace,
-                    marketplace_product_id=new.marketplace_product_id,
-                    product_id=new.product_id,
-                    competitor_product_id=new.competitor_product_id,
-                    field_name=field,
-                    change_type=kind,
-                    old_value=before,
-                    new_value=after,
-                    observed_at=new.captured_at,
-                )
+            event = ListingChangeEvent(
+                snapshot_id=new.id,
+                previous_snapshot_id=old.id,
+                marketplace=new.marketplace,
+                marketplace_product_id=new.marketplace_product_id,
+                product_id=new.product_id,
+                competitor_product_id=new.competitor_product_id,
+                field_name=field,
+                change_type=kind,
+                old_value=before,
+                new_value=after,
+                observed_at=new.captured_at,
+            )
+            self.session.add(event)
+            target_type, target_id = target_identity(
+                product_id=new.product_id,
+                competitor_product_id=new.competitor_product_id,
+                marketplace=new.marketplace,
+                marketplace_product_id=new.marketplace_product_id,
+            )
+            publish_change_event(
+                self.session,
+                target_type=target_type,
+                target_id=target_id,
+                event_type=f"listing_{kind.value}",
+                old_observation_type="listing_snapshot",
+                old_observation_id=old.id,
+                new_observation_type="listing_snapshot",
+                new_observation_id=new.id,
+                field_name=field,
+                old_value=before,
+                new_value=after,
+                detected_at=new.captured_at,
+                severity=(
+                    "warning"
+                    if field in {"title", "brand"} and kind is ListingChangeType.REMOVED
+                    else "info"
+                ),
             )
         old_ids = old.image_hashes or old.image_urls
         new_ids = new.image_hashes or new.image_urls
@@ -193,20 +218,39 @@ class ListingService:
             ("main_image", old_ids[:1], new_ids[:1]),
         ):
             if before != after and (before or after):
-                self.session.add(
-                    ListingChangeEvent(
-                        snapshot_id=new.id,
-                        previous_snapshot_id=old.id,
-                        marketplace=new.marketplace,
-                        marketplace_product_id=new.marketplace_product_id,
-                        product_id=new.product_id,
-                        competitor_product_id=new.competitor_product_id,
-                        field_name=field,
-                        change_type=ListingChangeType.MODIFIED,
-                        old_value=before,
-                        new_value=after,
-                        observed_at=new.captured_at,
-                    )
+                event = ListingChangeEvent(
+                    snapshot_id=new.id,
+                    previous_snapshot_id=old.id,
+                    marketplace=new.marketplace,
+                    marketplace_product_id=new.marketplace_product_id,
+                    product_id=new.product_id,
+                    competitor_product_id=new.competitor_product_id,
+                    field_name=field,
+                    change_type=ListingChangeType.MODIFIED,
+                    old_value=before,
+                    new_value=after,
+                    observed_at=new.captured_at,
+                )
+                self.session.add(event)
+                target_type, target_id = target_identity(
+                    product_id=new.product_id,
+                    competitor_product_id=new.competitor_product_id,
+                    marketplace=new.marketplace,
+                    marketplace_product_id=new.marketplace_product_id,
+                )
+                publish_change_event(
+                    self.session,
+                    target_type=target_type,
+                    target_id=target_id,
+                    event_type="listing_modified",
+                    old_observation_type="listing_snapshot",
+                    old_observation_id=old.id,
+                    new_observation_type="listing_snapshot",
+                    new_observation_id=new.id,
+                    field_name=field,
+                    old_value=before,
+                    new_value=after,
+                    detected_at=new.captured_at,
                 )
 
     def get(self, id: uuid.UUID) -> ListingSnapshot:

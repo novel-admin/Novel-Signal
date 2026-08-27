@@ -8,6 +8,7 @@ from decimal import ROUND_HALF_UP, Decimal
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from novel_signal.modules.actions.publication import publish_change_event, target_identity
 from novel_signal.modules.price_monitoring.errors import (
     PriceConflict,
     PriceNotFound,
@@ -198,23 +199,47 @@ class PriceService:
         absolute: Decimal | None = None,
         percent: Decimal | None = None,
     ) -> None:
-        self.session.add(
-            PriceChangeEvent(
-                observation_id=new.id,
-                previous_observation_id=old.id,
-                marketplace=new.marketplace,
-                marketplace_product_id=new.marketplace_product_id,
-                product_id=new.product_id,
-                competitor_product_id=new.competitor_product_id,
-                event_type=kind,
-                previous_price=old.primary_price,
-                new_price=new.primary_price,
-                absolute_change=absolute,
-                percent_change=percent,
-                geo_code=new.geo_code,
-                currency=new.currency,
-                observed_at=new.observed_at,
-            )
+        event = PriceChangeEvent(
+            observation_id=new.id,
+            previous_observation_id=old.id,
+            marketplace=new.marketplace,
+            marketplace_product_id=new.marketplace_product_id,
+            product_id=new.product_id,
+            competitor_product_id=new.competitor_product_id,
+            event_type=kind,
+            previous_price=old.primary_price,
+            new_price=new.primary_price,
+            absolute_change=absolute,
+            percent_change=percent,
+            geo_code=new.geo_code,
+            currency=new.currency,
+            observed_at=new.observed_at,
+        )
+        self.session.add(event)
+        target_type, target_id = target_identity(
+            product_id=new.product_id,
+            competitor_product_id=new.competitor_product_id,
+            marketplace=new.marketplace,
+            marketplace_product_id=new.marketplace_product_id,
+        )
+        is_availability = kind in {
+            PriceEventType.BECAME_AVAILABLE,
+            PriceEventType.BECAME_UNAVAILABLE,
+        }
+        publish_change_event(
+            self.session,
+            target_type=target_type,
+            target_id=target_id,
+            event_type=f"price_{kind.value}",
+            old_observation_type="price_observation",
+            old_observation_id=old.id,
+            new_observation_type="price_observation",
+            new_observation_id=new.id,
+            field_name="availability_status" if is_availability else "primary_price",
+            old_value=old.availability_status if is_availability else old.primary_price,
+            new_value=new.availability_status if is_availability else new.primary_price,
+            detected_at=new.observed_at,
+            severity="warning" if kind is PriceEventType.BECAME_UNAVAILABLE else "info",
         )
 
     def _events(self, old: PriceObservation, new: PriceObservation) -> None:
