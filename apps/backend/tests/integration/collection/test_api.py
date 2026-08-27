@@ -55,3 +55,32 @@ def test_missing_job_returns_structured_404(client: TestClient) -> None:
     response = client.get(f"{BASE}/jobs/00000000-0000-4000-8000-000000000000")
     assert response.status_code == 404
     assert response.json()["detail"]["code"] == "collection_job_not_found"
+
+
+def test_resync_accepts_bounded_filters(client: TestClient) -> None:
+    response = client.post(
+        f"{BASE}/resync",
+        json={
+            "sources": ["amazon_public_pages"],
+            "window_start": "2026-08-26T00:00:00Z",
+            "window_end": "2026-08-27T00:00:00Z",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"created": 0, "existing": 0, "job_ids": []}
+
+
+def test_resync_rejects_unknown_source_and_large_window(client: TestClient) -> None:
+    unknown = client.post(f"{BASE}/resync", json={"sources": ["flipkart"]})
+    assert unknown.status_code == 422
+    assert unknown.json()["detail"]["code"] == "unsupported_resync_source"
+
+    large = client.post(
+        f"{BASE}/resync",
+        json={
+            "window_start": "2026-01-01T00:00:00Z",
+            "window_end": "2026-02-02T00:00:00Z",
+        },
+    )
+    assert large.status_code == 422

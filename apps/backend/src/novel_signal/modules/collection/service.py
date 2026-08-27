@@ -96,7 +96,13 @@ class CollectionPlanningService:
         self.repository = CollectionRepository(session)
         self.settings = get_settings()
 
-    def plan_due(self, *, at: datetime | None = None) -> PlanningResult:
+    def plan_due(
+        self,
+        *,
+        at: datetime | None = None,
+        platforms: set[str] | None = None,
+        entity_ids: set[uuid.UUID] | None = None,
+    ) -> PlanningResult:
         now = (at or utc_now()).astimezone(UTC)
         jobs: list[CollectionJob] = []
         created = 0
@@ -112,8 +118,12 @@ class CollectionPlanningService:
             )
 
         for keyword_id, cadence_minutes in cadence_by_keyword.items():
+            if entity_ids is not None and keyword_id not in entity_ids:
+                continue
             scheduled_for = cadence_slot(now, cadence_minutes)
             for platform in ("amazon_in", "google"):
+                if platforms is not None and platform not in platforms:
+                    continue
                 key = idempotency_key(
                     platform=platform,
                     job_type=CollectionJobType.SERP,
@@ -138,6 +148,8 @@ class CollectionPlanningService:
 
         product_slot = cadence_slot(now, self.PRODUCT_DETAIL_CADENCE_MINUTES)
         for product in self.repository.active_products():
+            if entity_ids is not None and product.id not in entity_ids:
+                continue
             key = idempotency_key(
                 platform="amazon_in",
                 job_type=CollectionJobType.PRODUCT_DETAIL,
@@ -161,6 +173,8 @@ class CollectionPlanningService:
             existing += int(not was_created)
 
         for competitor_product in self.repository.active_competitor_products():
+            if entity_ids is not None and competitor_product.id not in entity_ids:
+                continue
             key = idempotency_key(
                 platform="amazon_in",
                 job_type=CollectionJobType.PRODUCT_DETAIL,

@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import uuid
+from datetime import UTC, datetime, timedelta
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel, Field, model_validator
 from sqlalchemy.orm import Session
 
 from novel_signal.db import get_db
@@ -44,6 +46,55 @@ router = APIRouter(prefix="/collection", tags=["S12 Collection"])
 SessionDep = Annotated[Session, Depends(get_db)]
 Limit = Annotated[int, Query(ge=1, le=200)]
 Offset = Annotated[int, Query(ge=0)]
+
+
+class ResyncRequest(BaseModel):
+    sources: list[str] = Field(default_factory=list, max_length=8)
+    entity_ids: list[uuid.UUID] = Field(default_factory=list, max_length=200)
+    window_start: datetime | None = None
+    window_end: datetime | None = None
+
+    @model_validator(mode="after")
+    def validate_window(self) -> ResyncRequest:
+        if (self.window_start is None) != (self.window_end is None):
+            raise ValueError("window_start and window_end must be supplied together")
+        if self.window_start is not None and self.window_end is not None:
+            start = self.window_start.astimezone(UTC)
+            end = self.window_end.astimezone(UTC)
+            if start > end:
+                raise ValueError("window_start must be before window_end")
+            if end - start > timedelta(days=31):
+                raise ValueError("Resync window cannot exceed 31 days")
+        return self
+
+
+@router.post("/resync", response_model=CollectionPlanResult)
+def resync(request: ResyncRequest, session: SessionDep) -> CollectionPlanResult:
+    source_platforms = {
+        "amazon_public": "amazon_in",
+        "amazon_public_pages": "amazon_in",
+        "google_public": "google",
+        "google_serp": "google",
+        "amazon_in": "amazon_in",
+        "google": "google",
+    }
+    unknown_sources = sorted(set(request.sources) - source_platforms.keys())
+    if unknown_sources:
+        raise HTTPException(
+            422,
+            detail={"code": "unsupported_resync_source", "sources": unknown_sources},
+        )
+    platforms = {source_platforms[source] for source in request.sources} or None
+    result = CollectionPlanningService(session).plan_due(
+        platforms=platforms,
+        entity_ids=set(request.entity_ids) or None,
+    )
+    session.commit()
+    return CollectionPlanResult(
+        created=result.created,
+        existing=result.existing,
+        job_ids=[job.id for job in result.jobs],
+    )
 
 
 @router.get("/meta")
