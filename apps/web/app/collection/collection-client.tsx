@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { loadCollection, planCollection } from "./api";
+import { loadCollection, planCollection, resyncCollection } from "./api";
 import type {
   CollectionJob,
   DataQualityCheck,
@@ -92,6 +92,25 @@ export default function CollectionClient() {
     }
   }
 
+  async function resync() {
+    setBusy(true);
+    setError("");
+    setNotice("");
+    try {
+      const result = await resyncCollection();
+      setNotice(
+        result.created > 0
+          ? `${result.created} resync job(s) queued`
+          : `No new resync jobs required · ${result.existing} already scheduled`,
+      );
+      setData(await loadCollection());
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Unable to queue resync");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   const health = data.health;
   const readiness = data.readiness;
 
@@ -114,6 +133,9 @@ export default function CollectionClient() {
             onClick={() => void plan()}
           >
             {busy ? "Planning…" : "Plan jobs"}
+          </button>
+          <button className="button" disabled={busy} onClick={() => void resync()}>
+            Resync now
           </button>
         </div>
       </div>
