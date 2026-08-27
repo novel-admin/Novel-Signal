@@ -163,12 +163,14 @@ export default function CollectionClient() {
           {readiness && (
             <div className="readiness-grid">
               <Readiness label="PostgreSQL" value={readiness.postgres.status} />
-              <Readiness label="Redis" value={readiness.redis.status} />
               <Readiness
                 label="Object store"
                 value={readiness.object_store.status}
               />
-              <Readiness label="Celery" value={readiness.celery.status} />
+              <Readiness
+                label="Database scheduler"
+                value={readiness.scheduler.status}
+              />
             </div>
           )}
 
