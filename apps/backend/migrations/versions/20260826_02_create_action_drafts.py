@@ -34,10 +34,14 @@ def upgrade() -> None:
         sa.Column("accepted_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("rejected_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column(
-            "created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
         ),
         sa.CheckConstraint(
-            "gap_id IS NOT NULL OR action_id IS NOT NULL", name="action_draft_origin_required"
+            "gap_id IS NOT NULL OR action_id IS NOT NULL",
+            name="action_draft_origin_required",
         ),
         sa.CheckConstraint(
             "status IN ('draft', 'accepted', 'rejected')", name="action_draft_status_valid"

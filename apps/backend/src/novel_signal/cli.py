@@ -12,6 +12,7 @@ from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
+from sqlalchemy import Column, String, update
 from sqlalchemy import Enum as SAEnum
 from sqlalchemy import String, update
 from sqlalchemy.orm import Session
