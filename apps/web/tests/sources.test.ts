@@ -10,5 +10,8 @@ describe("Week 2 sources screen", () => {
     expect(screen).toContain('`${api}/collection/readiness`');
     expect(screen).toContain("does not claim that a live credential verification has run");
     expect(screen).not.toContain("credentials_json");
+    expect(screen).toContain("database scheduler");
+    expect(screen).not.toContain('"redis"');
+    expect(screen).not.toContain('"celery"');
   });
 });

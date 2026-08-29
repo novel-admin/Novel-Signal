@@ -88,9 +88,8 @@ export type ReadinessItem = {
 export type Readiness = {
   status: string;
   postgres: ReadinessItem;
-  redis: ReadinessItem;
   object_store: ReadinessItem;
-  celery: ReadinessItem;
+  scheduler: ReadinessItem;
 };
 
 export type Retention = {

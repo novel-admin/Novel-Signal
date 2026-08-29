@@ -75,3 +75,14 @@ export function planCollection() {
     method: "POST",
   });
 }
+
+export function resyncCollection() {
+  return request<{
+    created: number;
+    existing: number;
+    job_ids: string[];
+  }>("/collection/resync", {
+    method: "POST",
+    body: JSON.stringify({}),
+  });
+}

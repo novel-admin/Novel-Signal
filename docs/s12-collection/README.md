@@ -29,7 +29,7 @@ Implemented:
 - challenge failures represented explicitly; challenge handling is backoff/report, never bypass
 - maximum-attempt terminal failure state
 - executor registry for Phase-3 collector/evidence pipeline integration
-- Celery collection queue, minute planner task, and retry dispatch
+- Database-backed collection planning, claiming, retry scheduling, and Render Cron execution
 - collection job list/get/plan/manual-dispatch API endpoints
 
 ## Week-1 scheduling contract
@@ -42,8 +42,8 @@ Implemented:
 
 ## Worker contract
 
-Run collection work on a dedicated Celery queue. Amazon.in concurrency is configured separately
-from application code and should respect `amazon_in_concurrency`; the collector layer is also
+Run collection work from the bounded Render Cron command (`python -m novel_signal.cli collect-due`).
+Amazon.in concurrency is configured separately from application code and should respect `amazon_in_concurrency`; the collector layer is also
 responsible for configured politeness delays. Phase 3 will register concrete executors for SERP
 and product-detail capture.
 
@@ -65,7 +65,7 @@ Implemented:
 - parser exceptions quarantined with retained raw evidence
 - validation failures quarantined with row-level schema errors and parsed payload
 - normalized publisher contract used only after validation succeeds
-- Celery execution support for a `quarantined` terminal state
+- Direct execution support for a `quarantined` terminal state
 - read APIs for raw evidence, quarantine records and data-quality checks
 
 The generic publisher contract intentionally does not create S3/S5/S6 observation tables. Those

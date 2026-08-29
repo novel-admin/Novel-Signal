@@ -10,11 +10,11 @@ import sys
 import uuid
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
-from typing import Any, cast
+from typing import Any
 
 from sqlalchemy import Column, String, update
 from sqlalchemy import Enum as SAEnum
-from sqlalchemy.engine import CursorResult
+from sqlalchemy import String, update
 from sqlalchemy.orm import Session
 from sqlalchemy.sql.sqltypes import JSON as JSONType
 
@@ -30,7 +30,7 @@ from novel_signal.modules.ads.models import (
     OwnAdPerformance,
 )
 from novel_signal.modules.alerts.models import AlertEvent, AlertRule
-from novel_signal.modules.auth.models import User
+from novel_signal.modules.auth.models import User, Workspace, WorkspaceMember
 from novel_signal.modules.auth.service import password_hash
 from novel_signal.modules.collection import models as collection_models  # noqa: F401
 from novel_signal.modules.collection.runner import run_due_collection_jobs
@@ -63,12 +63,7 @@ from novel_signal.modules.universe.models import (
 )
 
 
-def _demo_value(
-    column: Column[Any],
-    table_name: str,
-    row_number: int,
-    ids: dict[str, object],
-) -> object:
+def _demo_value(column: Any, table_name: str, row_number: int, ids: dict[str, object]) -> object:
     """Return a safe, schema-valid value for a single demo row."""
     name = column.name
     lowered = name.lower()
@@ -178,14 +173,9 @@ def _seed_all_empty_tables(session: Session) -> int:
             values["gap_id"] = ids["gaps"]
         try:
             with session.begin_nested():
-                result = cast(
-                    CursorResult[Any],
-                    session.execute(table.insert().values(**values)),
-                )
+                session.execute(table.insert().values(**values))
                 session.flush()
             inserted_id = values.get(next(iter(table.primary_key)).name)
-            if inserted_id is None and result.inserted_primary_key:
-                inserted_id = result.inserted_primary_key[0]
             ids[table.name] = inserted_id
             seeded += 1
         except Exception:
@@ -322,6 +312,14 @@ def main() -> int:
             if user is None:
                 user = User(email="demo@demo.com", password_hash=password_hash("demo123"))
                 session.add(user)
+                session.flush()
+            workspace = session.query(Workspace).filter_by(name="Demo workspace").one_or_none()
+            if workspace is None:
+                workspace = Workspace(name="Demo workspace")
+                session.add(workspace)
+                session.flush()
+            if session.query(WorkspaceMember).filter_by(workspace_id=workspace.id, user_id=user.id).one_or_none() is None:
+                session.add(WorkspaceMember(workspace_id=workspace.id, user_id=user.id, role="owner"))
             # A small, connected Novel universe makes every downstream fixture useful.
             product = session.query(Product).filter_by(internal_sku="NOVEL-DEMO-001").one_or_none()
             if product is None:

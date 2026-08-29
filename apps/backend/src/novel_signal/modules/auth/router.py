@@ -3,13 +3,22 @@ from __future__ import annotations
 # ruff: noqa: B008
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from novel_signal.config import get_settings
 from novel_signal.db import get_db
 
-from .service import access_token, authenticate, is_authenticated
+from .models import User
+from .service import (
+    access_token,
+    authenticate,
+    is_authenticated,
+    password_hash,
+    token_subject,
+    verify_password,
+)
 
 router = APIRouter(prefix="/auth", tags=["authentication"])
 
@@ -18,6 +27,11 @@ class LoginRequest(BaseModel):
     email: str = ""
     password: str = ""
     code: str = ""
+
+
+class PasswordChangeRequest(BaseModel):
+    current_password: str
+    new_password: str = Field(min_length=8)
 
 
 @router.post("/login")
@@ -59,7 +73,7 @@ def session(request: Request) -> dict[str, bool | str | None]:
     authenticated = is_authenticated(token, settings)
     return {
         "authenticated": authenticated,
-        "email": None,
+        "email": token_subject(token) if authenticated else None,
     }
 
 
@@ -68,3 +82,23 @@ def logout() -> JSONResponse:
     response = JSONResponse({"authenticated": False})
     response.delete_cookie(get_settings().dashboard_auth_cookie)
     return response
+
+
+@router.post("/password-change", response_model=None)
+def change_password(
+    payload: PasswordChangeRequest,
+    request: Request,
+    session: Session = Depends(get_db),
+) -> JSONResponse | dict[str, bool]:
+    settings = get_settings()
+    email = token_subject(request.cookies.get(settings.dashboard_auth_cookie))
+    if not is_authenticated(
+        request.cookies.get(settings.dashboard_auth_cookie), settings
+    ) or not email:
+        return JSONResponse(status_code=401, content={"detail": "Authentication is required"})
+    user = session.scalar(select(User).where(User.email == email, User.is_active.is_(True)))
+    if user is None or not verify_password(payload.current_password, user.password_hash):
+        return JSONResponse(status_code=400, content={"detail": "Current password is incorrect"})
+    user.password_hash = password_hash(payload.new_password)
+    session.commit()
+    return {"changed": True}
