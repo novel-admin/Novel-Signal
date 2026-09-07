@@ -36,8 +36,7 @@ export default function VerifyEmailPage() {
       <div className="eyebrow">Novel Signal</div>
       <h1>Verify your email</h1>
       <p className="lede">
-        Open the verification link from your inbox, then return here and log in. You must verify
-        your email before you can enroll MFA and access application data.
+        Open the verification link from your inbox, then return here and log in.
       </p>
       <form onSubmit={resend} className="auth-form">
         <label htmlFor="verify-email">Email</label>

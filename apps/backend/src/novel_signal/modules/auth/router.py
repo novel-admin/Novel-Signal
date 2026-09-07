@@ -1,15 +1,16 @@
-"""Supabase-only identity endpoints.
+"""Supabase-only identity endpoints for the internal Novel tool.
 
 No public signup, no account provisioning, no invitations, no Admin API,
-and no service-role key usage exist in this application. Users are created
-manually by the platform owner in the Supabase Dashboard; the owner then
-assigns workspace membership/role through the approved owner/admin flow
-(CLI or the membership endpoints below).
+and no service-role key usage exist in this application. The platform
+administrator creates every login email and password manually in the
+Supabase Dashboard; workspace membership/role is assigned separately
+through the approved owner/admin flow (membership endpoints below or CLI).
 
-Login, email verification, password setup/reset, session refresh, and TOTP
-MFA enrollment/challenge all happen via Supabase Auth (frontend). The
-backend only verifies Supabase JWTs and enforces email verification, AAL2,
-membership, and roles.
+Login, session refresh, and password reset/change all happen via Supabase
+Auth (frontend). The backend only verifies Supabase JWTs and enforces
+application mapping, workspace membership, and roles. There is no MFA,
+no AAL2 requirement, and no email-verification gate: any valid Supabase
+session is accepted.
 """
 
 from __future__ import annotations
@@ -67,10 +68,11 @@ def _bearer(request: Request) -> str | None:
     return None
 
 
-def _verified_identity(request: Request) -> SupabaseUser:
-    """Identity endpoints allow AAL1 so the UI can route to MFA challenge."""
+def _authenticated_identity(request: Request) -> SupabaseUser:
+    """Valid Supabase session. No email or MFA checks: internal tool login
+    accepts any valid session; mapping and membership are enforced next."""
     try:
-        user = verify_supabase_token(_bearer(request))
+        return verify_supabase_token(_bearer(request))
     except SupabaseAuthError as error:
         if error.code == "AUTH_EXPIRED":
             raise api_error(
@@ -83,13 +85,6 @@ def _verified_identity(request: Request) -> SupabaseUser:
             code="AUTH_REQUIRED",
             status_code=status.HTTP_401_UNAUTHORIZED,
         ) from error
-    if not user.email_verified:
-        raise api_error(
-            "Email verification is required",
-            code="EMAIL_UNVERIFIED",
-            status_code=status.HTTP_403_FORBIDDEN,
-        )
-    return user
 
 
 def _workspaces_for_profile(session: Session, profile: User) -> list[WorkspaceRoleRead]:
@@ -127,7 +122,7 @@ def _profile_for_user(session: Session, user: SupabaseUser) -> User | None:
 
 @router.get("/me", response_model=MeResponse)
 def me(request: Request, session: Annotated[Session, Depends(get_db)]) -> MeResponse:
-    user = _verified_identity(request)
+    user = _authenticated_identity(request)
     profile = _profile_for_user(session, user)
     workspaces = _workspaces_for_profile(session, profile) if profile is not None else []
     return MeResponse(
@@ -143,7 +138,7 @@ def me(request: Request, session: Annotated[Session, Depends(get_db)]) -> MeResp
 def list_my_workspaces(
     request: Request, session: Annotated[Session, Depends(get_db)]
 ) -> list[WorkspaceRoleRead]:
-    user = _verified_identity(request)
+    user = _authenticated_identity(request)
     profile = _profile_for_user(session, user)
     if profile is None:
         raise api_error(
@@ -154,13 +149,13 @@ def list_my_workspaces(
     return _workspaces_for_profile(session, profile)
 
 
-def _require_aal2_workspace_owner_admin(
+def _require_workspace_owner_admin(
     request: Request, session: Session
 ) -> tuple[SupabaseUser, User, Workspace, WorkspaceMember]:
     from novel_signal.api.dependencies import require_workspace_membership
     from novel_signal.modules.auth.roles import meets_requirement
 
-    # Reuse the full chain: JWT -> verified -> AAL2 -> membership.
+    # Reuse the full chain: JWT -> membership.
     try:
         user = verify_supabase_token(_bearer(request))
     except SupabaseAuthError as error:
@@ -169,18 +164,6 @@ def _require_aal2_workspace_owner_admin(
             code="AUTH_REQUIRED",
             status_code=status.HTTP_401_UNAUTHORIZED,
         ) from error
-    if not user.email_verified:
-        raise api_error(
-            "Email verification is required",
-            code="EMAIL_UNVERIFIED",
-            status_code=status.HTTP_403_FORBIDDEN,
-        )
-    if not user.is_aal2:
-        raise api_error(
-            "Multi-factor authentication is required",
-            code="MFA_REQUIRED",
-            status_code=status.HTTP_403_FORBIDDEN,
-        )
     context = require_workspace_membership(request, user, session)
     if not meets_requirement(context.membership.role, "admin"):
         audit_event(
@@ -202,7 +185,7 @@ def _require_aal2_workspace_owner_admin(
 def list_members(
     request: Request, session: Annotated[Session, Depends(get_db)]
 ) -> list[MemberRead]:
-    _, _, workspace, _ = _require_aal2_workspace_owner_admin(request, session)
+    _, _, workspace, _ = _require_workspace_owner_admin(request, session)
     rows = session.execute(
         select(User, WorkspaceMember)
         .join(WorkspaceMember, WorkspaceMember.user_id == User.id)
@@ -227,7 +210,7 @@ def update_member_role(
     request: Request,
     session: Annotated[Session, Depends(get_db)],
 ) -> MemberRead:
-    actor, actor_profile, workspace, actor_membership = _require_aal2_workspace_owner_admin(
+    actor, actor_profile, workspace, actor_membership = _require_workspace_owner_admin(
         request, session
     )
     target_membership = session.scalar(
@@ -286,7 +269,7 @@ def update_member_role(
 def remove_member(
     user_id: str, request: Request, session: Annotated[Session, Depends(get_db)]
 ) -> None:
-    actor, actor_profile, workspace, _ = _require_aal2_workspace_owner_admin(request, session)
+    actor, actor_profile, workspace, _ = _require_workspace_owner_admin(request, session)
     if user_id == actor_profile.id:
         raise api_error(
             "You cannot remove your own membership",

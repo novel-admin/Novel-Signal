@@ -1,21 +1,29 @@
-# Supabase-only authentication for Novel Signal
+# Supabase authentication for Novel Signal (internal tool)
 
-Supabase Auth is the only identity provider. There is no public signup, no
-signup page/API, no provisioning API, no invitations inside Novel Signal, no
-self-service workspace creation, no Admin API usage, and no service-role key
-in the application.
+Novel Signal is an internal proprietary Novel tool, not a public SaaS
+product. Supabase Auth is the only identity provider. There is no public
+signup, no signup page/API, no user registration, no invitations inside
+Novel Signal, no self-service account or workspace creation, no MFA/2FA,
+no Admin API usage, and no service-role key in the application.
 
-## Account creation policy (private deployment)
+## Account creation policy (administrator-managed)
 
-1. Platform owner creates the user manually in Supabase Dashboard
-   (Authentication → Users → Invite/Create).
-2. Owner separately assigns application workspace membership and role using
-   the approved owner/admin flow:
+1. The platform administrator creates each user's login email and password
+   manually in the Supabase Dashboard (Authentication → Users).
+2. The administrator separately assigns application workspace membership and
+   role:
    - `PUT /api/v1/auth/members/{user_id}` with `{"role": "owner|admin|analyst|viewer"}`
    - or the existing CLI/DB process.
-3. User receives the Supabase invite/reset email, sets a password through the
-   secure Supabase link (`/first-login` explains this), verifies email,
-   enrolls TOTP, verifies TOTP, reaches AAL2, then logs in.
+3. The administrator gives the user their email and password securely.
+4. The user opens Novel Signal, enters email and password on `/login`,
+   is authenticated, and accesses the platform.
+
+```text
+Admin creates email and password in Supabase Dashboard
+→ user enters email and password on /login
+→ user is authenticated
+→ user accesses the platform
+```
 
 If a user does not exist in Supabase Auth, login fails with generic
 "Invalid email or password." The app never reveals whether an email exists.
@@ -46,30 +54,32 @@ One-time linking of pre-existing development profiles is explicit only:
 
 ## Required flows (all via Supabase)
 
-- Login: `/login` → `signInWithPassword` (PKCE, cookie SSR).
-- Email verification: `/verify-email` + `/auth/callback` code exchange.
-- First-login password setup: `/first-login` → `updateUser({password})` from the invite link.
-- Forgot/reset: `/forgot-password` → `resetPasswordForEmail` → `/reset-password` → `updateUser`.
-- Password change: `/settings/security` → `updateUser({password})` (authenticated).
+- Login: `/login` → `signInWithPassword` (PKCE, cookie SSR). On success the
+  user lands directly in the application. No MFA setup, challenge, or
+  password-reset setup interrupts normal login.
+- First login (only if the administrator uses a temporary-password flow):
+  `/first-login` → `updateUser({password})` from the secure email link.
+- Forgot/reset (supported as before): `/forgot-password` →
+  `resetPasswordForEmail` → `/reset-password` → `updateUser`.
+- Password change: `/settings/security` → `updateUser({password})`
+  (authenticated Supabase flow).
 - Logout: Supabase `signOut` + backend `/auth/logout` audit.
-- Session restore/refresh/expiry: `@supabase/ssr` middleware (`updateSession`)
-  refreshes cookies per request; expired sessions redirect to `/login`.
-- Mandatory TOTP: `/mfa/setup` enroll → QR → challenge → verify → AAL2.
-- Challenge: `/mfa/challenge` on future logins until AAL2.
-- Security settings: `/settings/security` (factors, unenroll, password, recovery info).
-- Lost authenticator: owner-controlled recovery. User contacts the owner, owner
-  verifies identity out-of-band, removes the old factor (owner/admin), user
-  re-enrolls at `/mfa/setup`. No self-service bypass exists.
+- Session restoration/refresh/expiry: `@supabase/ssr` middleware
+  (`updateSession`) refreshes cookies per request; expired sessions return
+  to `/login`.
+- Access gate: a valid Supabase session plus a backend-mapped application
+  user with active workspace membership renders the app. The gate never
+  inspects MFA factors or assurance levels.
 
 Backend enforcement order per protected request:
 
 ```text
-Supabase JWT → identity → email verification → AAL2 → active membership → role → resource ownership
+valid Supabase JWT → mapped application user → active membership → role → resource ownership
 ```
 
-- Missing/expired/malformed/wrong-project tokens → 401 (generic).
-- Unverified email → 403 `EMAIL_UNVERIFIED`.
-- AAL1 on protected data → 403 `MFA_REQUIRED`. AAL2 is never downgraded.
+- Missing/invalid/expired/wrong-project tokens → 401 (generic). A valid
+  AAL1 session is accepted; no AAL2 check exists.
+- Unmapped Supabase user (no `users.supabase_user_id` link) → 403.
 - No membership → 403. Wrong workspace ID → 403/404 without existence leak.
 - Viewer: read-only. Analyst+: writes. Admin: workspace data/jobs/connections.
   Owner: membership/role admin. Users cannot change their own role.
@@ -93,24 +103,38 @@ Backend verifies JWTs with JWKS (RS256/ES256) first, HS256 secret second.
 No network calls are made in normal CI (HS256 test secret); JWKS is cached
 (`SUPABASE_JWKS_CACHE_TTL_SECONDS`).
 
+### Supabase Dashboard settings (required)
+
+- Authentication → Providers → Email: enabled (email/password login).
+- Public signup disabled (or at least never exposed: the application has no
+  signup page, API, or invitation flow).
+- Email verification behavior agreed with Novel's internal policy. The
+  application itself never blocks login on verification; whatever Supabase
+  enforces at sign-in time applies.
+- Authentication → URL Configuration → Site URL: `https://<web>` (prod) /
+  `http://localhost:3000` (local).
+- Redirect URLs:
+  - `https://<web>/auth/callback`
+  - `http://localhost:3000/auth/callback` (local)
+- Authentication → Password protection: set minimum length and leaked-password
+  protection per Novel's internal password policy.
+- SMTP (Auth → SMTP Settings): configure custom SMTP only if password-reset
+  or other email flows are used; otherwise the Supabase default suffices.
+- MFA/2FA: not required. Do not enable "require MFA" enforcement for this
+  project; the application has no enrollment or challenge flows.
+- Supabase Dashboard is the source for creating login credentials. No
+  service-role key is used anywhere by the application.
+
 ### Redirect URLs (Supabase Dashboard → Authentication → URL Configuration)
 
-- `https://<web>/auth/callback`
-- `http://localhost:3000/auth/callback` (local)
-- Site URL: `https://<web>` (prod) / `http://localhost:3000` (local)
+Covered above: Site URL plus `/auth/callback` for web and local.
 
 ### Email verification / password reset / SMTP
 
-- Auth → Email: enable "Confirm email", set secure redirect to `/auth/callback`.
-- Password reset redirect to `/auth/callback` (then `/reset-password`).
-- Production must use custom SMTP (Auth → SMTP Settings) so invite,
-  verification, and reset emails deliver reliably. Dev may use Supabase default
-  with rate limits.
-
-### MFA settings (Supabase Dashboard → Authentication → MFA)
-
-- Enable TOTP. Require MFA for this project (app additionally enforces AAL2).
-- The app treats `aal` claim or `amr` containing `totp`/`otp` as AAL2.
+- Password reset redirect goes to `/auth/callback` (then `/reset-password`).
+- Configure custom SMTP only when password-reset or email flows are used.
+- The `/verify-email` page remains available for users who receive a
+  verification email, but nothing in the login path forces users through it.
 
 ### JWT verification settings
 
@@ -210,34 +234,38 @@ Verify:
   requires Secure).
 - CORS restricted to `CORS_ORIGINS` (prod: web origin only), credentials on,
   methods limited, `Authorization` + `X-Workspace-Id` headers.
-- Login rate limiting: Supabase built-in (auth rate limits, MFA attempt
-  limits). Backend adds generic errors to avoid oracles.
-- Audit events (no secrets): login, logout, password changes/resets, MFA
-  enrollment/verification/removal, auth failures, authorization failures,
-  membership/role changes. Secrets redacted (`[redacted]`) in logs.
+- Login rate limiting: Supabase built-in auth rate limits. Backend adds
+  generic errors to avoid oracles.
+- Audit events (no secrets): login, logout, password changes/resets, auth
+  failures, authorization failures, membership/role changes. Secrets redacted
+  (`[redacted]`) in logs.
 - No passwords or TOTP secrets in application tables. No tokens in responses.
 - Authenticated responses send `Cache-Control: no-store`.
 
-## Manual verification (before real client data)
+## Manual verification (acceptance flow)
 
-1. Create user in Supabase Dashboard → user gets invite/reset email.
-2. User sets password (`/first-login`), verifies email (`/verify-email`).
-3. User enrolls TOTP (`/mfa/setup`), verifies code, reaches AAL2.
-4. User logs in (`/login`), completes MFA challenge (`/mfa/challenge`), opens workspace.
-5. Password reset: `/forgot-password` → email link → `/reset-password` → login again + MFA.
-6. Check role permissions (viewer read-only, analyst writes, admin manages, owner administers).
-7. Deactivate the user / remove membership → verify 403 on next request.
-8. Cross-workspace: two real users in two workspaces; verify neither can
+1. Admin creates the user (email + password) in the Supabase Dashboard.
+2. Admin assigns workspace membership and role.
+3. Admin gives the user their email and password securely.
+4. User opens Novel Signal, enters email and password on `/login`.
+5. User is logged in and lands directly in the application — no MFA setup,
+   no challenge, no verification detour.
+6. Password reset (if used): `/forgot-password` → email link →
+   `/reset-password` → login again.
+7. Check role permissions (viewer read-only, analyst writes, admin manages,
+   owner administers).
+8. Deactivate the user / remove membership → verify 403 on next request.
+9. Cross-workspace: two real users in two workspaces; verify neither can
    list, read, or write the other's competitors, products, keywords, jobs,
    evidence, scorecards, gaps, actions, or alerts (expect 403/404, no
    existence leaks either way).
-9. Confirm `AUTH_ALLOW_EMAIL_FALLBACK_LINKING` is `false`/unset in Render.
-10. Confirm Render env vars (`SUPABASE_URL`, anon key, JWT secret/JWKS,
+10. Confirm `AUTH_ALLOW_EMAIL_FALLBACK_LINKING` is `false`/unset in Render.
+11. Confirm Render env vars (`SUPABASE_URL`, anon key, JWT secret/JWKS,
     issuer, audience, `FRONTEND_URL`, `CORS_ORIGINS`); no service-role key.
-11. Install Chromium and rerun the remaining browser test.
-12. Confirm the auth audit log never stores tokens or secrets
+12. Install Chromium and rerun the remaining browser test.
+13. Confirm the auth audit log never stores tokens or secrets
     (`auth_audit_events` rows + log output contain only `[redacted]`).
-13. Check `/api/v1/auth/me` returns workspaces/roles, no secrets.
+14. Check `/api/v1/auth/me` returns workspaces/roles, no secrets.
 
 ## Remaining limitations (plain)
 

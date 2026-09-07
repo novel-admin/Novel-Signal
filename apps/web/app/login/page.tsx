@@ -7,7 +7,9 @@ import { createClient } from "@/lib/supabase/client";
 
 export const dynamic = "force-dynamic";
 
-/** Login only. No signup exists: users are created by the platform owner in Supabase Dashboard. */
+/** Login only. The administrator creates every account in the Supabase
+ *  Dashboard; users sign in here with their assigned email and password.
+ *  No signup exists and no second factor is required. */
 export default function LoginPage() {
   const router = useRouter();
   const [email, setEmail] = useState("");
@@ -30,19 +32,7 @@ export default function LoginPage() {
         setError("Invalid email or password.");
         return;
       }
-      const user = data.user;
-      if (!user.email_confirmed_at && !user.confirmed_at) {
-        router.replace("/verify-email");
-        return;
-      }
-      const { data: factors } = await supabase.auth.mfa.listFactors();
-      const verified = (factors?.totp ?? []).filter((factor) => factor.status === "verified");
-      if (verified.length === 0) {
-        router.replace("/mfa/setup");
-        return;
-      }
-      const { data: aal } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
-      router.replace(aal?.currentLevel === "aal2" ? "/" : "/mfa/challenge");
+      router.replace("/");
     } catch {
       setError("We could not reach the login service. Try again.");
     } finally {
@@ -55,7 +45,7 @@ export default function LoginPage() {
       <div className="eyebrow">Novel Signal</div>
       <h1>Log in</h1>
       <p className="lede">
-        Accounts are created by the platform owner. If you do not have an account, contact your
+        Accounts are created by the platform administrator. If you do not have an account, contact your
         administrator. There is no public signup.
       </p>
       <form onSubmit={submit} className="auth-form">
@@ -68,7 +58,6 @@ export default function LoginPage() {
       </form>
       <p className="lede">
         <Link href="/first-login">First login or new device?</Link> ·{" "}
-        <Link href="/verify-email">Verify email</Link> ·{" "}
         <Link href="/forgot-password">Forgot password?</Link>
       </p>
     </main>

@@ -1,21 +1,21 @@
-"""Supabase-only authentication tests (mocked JWTs, no network).
+"""Supabase-only authentication tests for the internal Novel tool (mocked JWTs).
 
 Covers the backend portion of the required cases:
-- no public signup route
-- valid login (JWT) reaches protected data via /auth/me + middleware
-- invalid login returns generic 401
-- unverified email cannot access data (403 EMAIL_UNVERIFIED)
-- AAL1 cannot access protected data (403 MFA_REQUIRED)
-- AAL2 can access protected data
-- session refresh concept (new token with later exp verifies)
-- expired session rejected (401 SESSION_EXPIRED)
-- logout removes access (client drops token; /auth/logout audits)
-- removed/deactivated members lose access (403)
-- viewer cannot write (403), analyst cannot do owner ops (403)
+- no public signup route, no signup API
+- a manually created Supabase user can log in (valid JWT reaches /auth/me)
+- a valid AAL1 session can access the application (no MFA/AAL2 requirement)
+- unverified email does not block access
+- no MFA factor, setup redirect, or challenge exists anywhere
+- invalid JWTs rejected (generic 401)
+- expired JWTs rejected (401 SESSION_EXPIRED)
+- wrong-project JWTs rejected
+- unmapped Supabase users rejected (403)
+- missing workspace membership rejected (403)
+- viewer read-only; analyst/admin/owner permissions work
 - cross-workspace reads/writes rejected (404/403 without existence leak)
-- evidence/collection-job workspace scoping
-- only owner/admin can change memberships/roles; no self-escalation
-- wrong-project tokens rejected
+- removed members lose access (403)
+- no account creation through the application
+- no service-role key usage
 - secrets never appear in responses/logs (audit redaction)
 - authenticated responses are no-store
 - RLS migration is PostgreSQL-only (SQLite skips; PG verified separately)
@@ -145,10 +145,29 @@ def test_signup_routes_do_not_exist(authed, db_engine) -> None:  # type: ignore[
     sub = str(uuid.uuid4())
     _seed_owner(db_engine, sub)
     headers = {"Authorization": f"Bearer {_token(sub=sub)}"}
-    # With a valid AAL2 session the router itself must 404: no signup exists.
+    # With a valid session the router itself must 404: no signup exists.
     assert authed.post("/api/v1/auth/signup", json={}, headers=headers).status_code == 404
     assert authed.post("/api/v1/auth/register", json={}, headers=headers).status_code == 404
     assert authed.get("/api/v1/auth/signup", headers=headers).status_code in {404, 405}
+
+
+def test_no_account_creation_through_the_application(authed, db_engine) -> None:  # type: ignore[no-untyped-def]
+    """No endpoint creates users, workspaces, or Supabase accounts."""
+    sub = str(uuid.uuid4())
+    _seed_owner(db_engine, sub)
+    headers = {"Authorization": f"Bearer {_token(sub=sub)}"}
+    for method, path in [
+        ("post", "/api/v1/auth/users"),
+        ("post", "/api/v1/auth/invite"),
+        ("post", "/api/v1/auth/register"),
+        ("post", "/api/v1/users"),
+        ("post", "/api/v1/workspaces"),
+    ]:
+        response = authed.request(method, path, json={}, headers=headers)
+        assert response.status_code in {404, 405}, (method, path)
+    with Session(db_engine) as session:
+        assert session.query(User).count() == 1
+        assert session.query(Workspace).count() == 1
 
 
 def test_legacy_login_and_session_routes_are_gone(authed, db_engine) -> None:  # type: ignore[no-untyped-def]
@@ -159,14 +178,14 @@ def test_legacy_login_and_session_routes_are_gone(authed, db_engine) -> None:  #
     assert authed.get("/api/v1/auth/session", headers=headers).status_code == 404
 
 
-def test_valid_aal2_token_reaches_identity(authed, db_engine) -> None:  # type: ignore[no-untyped-def]
+def test_manually_created_user_can_log_in(authed, db_engine) -> None:  # type: ignore[no-untyped-def]
+    """Admin creates the Supabase user; email+password login yields a usable session."""
     sub = str(uuid.uuid4())
     _seed_owner(db_engine, sub)
     response = authed.get("/api/v1/auth/me", headers={"Authorization": f"Bearer {_token(sub=sub)}"})
     assert response.status_code == 200
     body = response.json()
     assert body["sub"] == sub
-    assert body["aal"] == "aal2"
     assert body["workspaces"][0]["role"] == "owner"
     assert "token" not in body and "secret" not in str(body).lower()
 
@@ -183,17 +202,18 @@ def test_missing_token_is_rejected(authed) -> None:  # type: ignore[no-untyped-d
     assert response.status_code == 401
 
 
-def test_unverified_email_cannot_access_data(authed, db_engine) -> None:  # type: ignore[no-untyped-def]
+def test_unverified_email_does_not_block_access(authed, db_engine) -> None:  # type: ignore[no-untyped-def]
+    """Internal tool: email verification never gates login or data access."""
     sub = str(uuid.uuid4())
     _seed_owner(db_engine, sub)
     token = _token(sub=sub, email_verified=False, confirmed_at=None)
     headers = {"Authorization": f"Bearer {token}"}
-    # Identity itself requires verification.
-    assert authed.get("/api/v1/auth/me", headers=headers).status_code == 403
-    assert authed.get("/api/v1/sources/connections", headers=headers).status_code == 403
+    assert authed.get("/api/v1/auth/me", headers=headers).status_code == 200
+    assert authed.get("/api/v1/sources/connections", headers=headers).status_code == 200
 
 
-def test_aal1_cannot_access_protected_data_but_can_read_identity(authed, db_engine) -> None:  # type: ignore[no-untyped-def]
+def test_aal1_session_can_access_application(authed, db_engine) -> None:  # type: ignore[no-untyped-def]
+    """No MFA factor, setup, challenge, or AAL2 requirement exists."""
     sub = str(uuid.uuid4())
     _seed_owner(db_engine, sub)
     token = _token(sub=sub, aal="aal1")
@@ -202,18 +222,33 @@ def test_aal1_cannot_access_protected_data_but_can_read_identity(authed, db_engi
     assert me.status_code == 200
     assert me.json()["aal"] == "aal1"
     protected = authed.get("/api/v1/sources/connections", headers=headers)
-    assert protected.status_code == 403
-    assert protected.json()["code"] == "MFA_REQUIRED"
+    assert protected.status_code == 200
+    assert protected.headers.get("Cache-Control") == "no-store"
 
 
-def test_aal2_can_access_protected_data(authed, db_engine) -> None:  # type: ignore[no-untyped-def]
-    sub = str(uuid.uuid4())
-    _seed_owner(db_engine, sub)
-    response = authed.get(
-        "/api/v1/sources/connections", headers={"Authorization": f"Bearer {_token(sub=sub)}"}
+def test_unmapped_user_is_rejected(authed, db_engine) -> None:  # type: ignore[no-untyped-def]
+    """A valid JWT whose sub has no application profile gets 403, not data."""
+    _seed_owner(db_engine, str(uuid.uuid4()))
+    headers = {"Authorization": f"Bearer {_token(sub=str(uuid.uuid4()))}"}
+    assert authed.get("/api/v1/sources/connections", headers=headers).status_code == 403
+    assert authed.get("/api/v1/auth/workspaces", headers=headers).status_code == 403
+
+
+def test_no_mfa_challenge_or_factor_checks_anywhere() -> None:
+    import pathlib
+
+    root = pathlib.Path("apps/backend/src/novel_signal")
+    files = list(root.rglob("*.py"))
+    text = "\n".join(
+        path.read_text(encoding="utf-8", errors="ignore") for path in files
     )
-    assert response.status_code == 200
-    assert response.headers.get("Cache-Control") == "no-store"
+    assert "MFA_REQUIRED" not in text
+    assert "EMAIL_UNVERIFIED" not in text
+    assert "mfa_required" not in text
+    assert "email_unverified" not in text
+    assert "is_aal2" not in text
+    assert "require_aal2" not in text
+    assert "/mfa/" not in text
 
 
 def test_expired_session_is_rejected(supabase_settings) -> None:

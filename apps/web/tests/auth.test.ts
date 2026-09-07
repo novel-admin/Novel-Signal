@@ -8,11 +8,17 @@ function read(path: string): string {
   return readFileSync(join(root, path), "utf-8");
 }
 
-describe("Supabase-only frontend auth", () => {
+describe("Supabase-only frontend auth (internal tool)", () => {
   it("has no public signup route or page", () => {
     expect(existsSync(join(root, "app/signup/page.tsx"))).toBe(false);
     expect(existsSync(join(root, "app/signup"))).toBe(false);
     expect(existsSync(join(root, "app/register/page.tsx"))).toBe(false);
+  });
+
+  it("has no MFA routes", () => {
+    expect(existsSync(join(root, "app/mfa"))).toBe(false);
+    expect(existsSync(join(root, "app/mfa/setup/page.tsx"))).toBe(false);
+    expect(existsSync(join(root, "app/mfa/challenge/page.tsx"))).toBe(false);
   });
 
   it("implements all required auth routes", () => {
@@ -20,8 +26,8 @@ describe("Supabase-only frontend auth", () => {
       "app/login/page.tsx",
       "app/verify-email/page.tsx",
       "app/first-login/page.tsx",
-      "app/mfa/setup/page.tsx",
-      "app/mfa/challenge/page.tsx",
+      "app/forgot-password/page.tsx",
+      "app/reset-password/page.tsx",
       "app/settings/security/page.tsx",
       "app/auth/callback/route.ts",
     ]) {
@@ -37,14 +43,42 @@ describe("Supabase-only frontend auth", () => {
     expect(login).not.toContain("signUp");
   });
 
-  it("enforces email verification, mandatory TOTP, and AAL2 before app data", () => {
+  it("login performs no MFA, AAL, or verification branching", () => {
+    const login = read("app/login/page.tsx");
+    expect(login).not.toContain("listFactors");
+    expect(login).not.toContain("getAuthenticatorAssuranceLevel");
+    expect(login).not.toContain("email_confirmed_at");
+    expect(login).not.toContain("/mfa/");
+    expect(login).not.toContain("aal2");
+  });
+
+  it("gate checks session plus backend mapping, without MFA or AAL", () => {
     const gate = read("components/AuthGate.tsx");
-    expect(gate).toContain("email_confirmed_at");
-    expect(gate).toContain("/verify-email");
-    expect(gate).toContain("/mfa/setup");
-    expect(gate).toContain("/mfa/challenge");
-    expect(gate).toContain("aal2");
+    expect(gate).toContain("getSession");
+    expect(gate).toContain("/auth/me");
+    expect(gate).toContain("not-configured");
+    expect(gate).not.toContain("listFactors");
+    expect(gate).not.toContain("getAuthenticatorAssuranceLevel");
+    expect(gate).not.toContain("/mfa/");
+    expect(gate).not.toContain("aal2");
     expect(gate.toLowerCase()).not.toContain("sign up");
+  });
+
+  it("shows no MFA as required anywhere in the UI", () => {
+    for (const file of [
+      "app/login/page.tsx",
+      "app/settings/security/page.tsx",
+      "app/first-login/page.tsx",
+      "app/verify-email/page.tsx",
+      "app/reset-password/page.tsx",
+      "components/AuthGate.tsx",
+      "lib/supabase/auth-guard.ts",
+    ]) {
+      const content = read(file);
+      expect(content, file).not.toContain("mfa.");
+      expect(content, file).not.toContain("MFA is mandatory");
+      expect(content, file).not.toContain("authenticator");
+    }
   });
 
   it("uses cookie-based SSR with per-request clients and PKCE callback", () => {
@@ -57,18 +91,6 @@ describe("Supabase-only frontend auth", () => {
   it("never caches authenticated pages across users", () => {
     expect(read("lib/supabase/middleware.ts")).toContain("no-store");
     expect(read("components/AuthGate.tsx")).toContain("Redirecting");
-  });
-
-  it("uses TOTP MFA enrollment and challenge flows", () => {
-    expect(read("app/mfa/setup/page.tsx")).toContain("mfa.enroll");
-    expect(read("app/mfa/challenge/page.tsx")).toContain("mfa.challenge");
-    expect(read("app/settings/security/page.tsx")).toContain("mfa.unenroll");
-  });
-
-  it("documents owner-controlled recovery without self-service signup", () => {
-    const security = read("app/settings/security/page.tsx");
-    expect(security.toLowerCase()).toContain("owner");
-    expect(security.toLowerCase()).toContain("recovery");
   });
 
   it("never references a service-role key in frontend code", () => {

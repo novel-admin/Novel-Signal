@@ -2,7 +2,9 @@
 
 Supabase Auth is the only identity provider. The backend never trusts
 frontend auth state: every protected request verifies the Supabase JWT,
-then enforces email verification and AAL2 before any workspace checks.
+then enforces workspace membership and roles. There is no
+email-verification gate and no MFA/AAL requirement; any valid session is
+accepted and the assurance level is informational only.
 
 Supported verification (in order):
 1. JWKS (RS256/ES256) from ``SUPABASE_JWKS_URL`` or
@@ -10,8 +12,6 @@ Supported verification (in order):
 2. HS256 with ``SUPABASE_JWT_SECRET`` (legacy Supabase JWT secret).
 
 Tokens from another Supabase project (wrong ``iss``) are rejected.
-AAL is derived from the ``aal`` claim when present, otherwise from ``amr``.
-Email verification is derived from ``email_verified`` / ``user_metadata``.
 """
 
 from __future__ import annotations
@@ -44,10 +44,6 @@ class SupabaseUser:
     issuer: str | None
     issued_at: int | None
     expires_at: int | None
-
-    @property
-    def is_aal2(self) -> bool:
-        return self.aal == "aal2"
 
 
 def _expected_issuer(settings: Settings) -> str | None:

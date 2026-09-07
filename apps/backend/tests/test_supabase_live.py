@@ -26,7 +26,8 @@ pytestmark = pytest.mark.skipif(
 )
 
 
-def test_live_login_and_aal2_flow() -> None:
+def test_live_login_flow() -> None:
+    """Internal tool: admin-created email+password signs in, no MFA involved."""
     try:
         from supabase import create_client  # type: ignore[import-not-found]
     except ImportError:
@@ -42,5 +43,5 @@ def test_live_login_and_aal2_flow() -> None:
     response = client.auth.sign_in_with_password(credentials)
     assert response.session is not None
     assert response.user is not None
-    # Manual steps after this: verify email, enroll TOTP, reach AAL2,
-    # call /api/v1/auth/me with the access token, verify workspace access.
+    # Manual steps after this: call /api/v1/auth/me with the access token,
+    # verify workspace membership, roles, and cross-workspace isolation.

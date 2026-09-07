@@ -5,7 +5,7 @@ import type { ReactNode } from "react";
 import { AppSidebar } from "./AppSidebar";
 import { SourceModeBanner } from "./SourceModeBanner";
 
-const PUBLIC_PREFIXES = ["/login", "/verify-email", "/first-login", "/forgot-password", "/reset-password", "/mfa", "/auth"];
+const PUBLIC_PREFIXES = ["/login", "/verify-email", "/first-login", "/forgot-password", "/reset-password", "/auth"];
 
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
