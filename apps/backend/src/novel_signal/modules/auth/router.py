@@ -131,6 +131,7 @@ def _profile_for_user(session: Session, user: SupabaseUser) -> User | None:
             session.add(
                 WorkspaceMember(workspace_id=workspace.id, user_id=profile.id, role="viewer")
             )
+        session.commit()
     if profile is not None and not profile.is_active:
         return None
     return profile

@@ -142,6 +142,7 @@ def require_workspace_membership(
         membership = WorkspaceMember(workspace_id=workspace.id, user_id=profile.id, role="viewer")
         session.add(membership)
         session.flush()
+    session.commit()
     if membership is None or workspace is None:
         audit_event(
             "authorization_failed",
