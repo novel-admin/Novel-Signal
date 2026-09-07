@@ -105,9 +105,16 @@ def _profile_for_user(session: Session, user: SupabaseUser) -> User | None:
     """Provision a Supabase Dashboard user into Novel's fixed tenant."""
     profile = session.scalar(select(User).where(User.supabase_user_id == user.sub))
     if profile is None and user.email:
-        profile = User(email=user.email.lower(), supabase_user_id=user.sub, is_active=True)
-        session.add(profile)
-        session.flush()
+        profile = session.scalar(select(User).where(User.email == user.email.lower()))
+        if profile is not None:
+            if profile.supabase_user_id not in (None, user.sub):
+                profile = None
+            else:
+                profile.supabase_user_id = user.sub
+        else:
+            profile = User(email=user.email.lower(), supabase_user_id=user.sub, is_active=True)
+            session.add(profile)
+            session.flush()
     if profile is not None:
         workspace = session.scalar(select(Workspace).where(Workspace.name == "Novel"))
         if workspace is None:
