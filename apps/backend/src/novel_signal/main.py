@@ -11,8 +11,7 @@ from novel_signal.api.router import api_router
 from novel_signal.config import get_settings
 from novel_signal.db import SessionLocal
 from novel_signal.modules.auth.audit import audit_event
-from novel_signal.modules.auth.models import User, WorkspaceMember
-from novel_signal.modules.auth.roles import can_write
+from novel_signal.modules.auth.models import Workspace
 from novel_signal.modules.auth.supabase import SupabaseAuthError, verify_supabase_token
 from novel_signal.scheduler import start_scheduler, stop_scheduler
 from novel_signal.tenant import tenant_scope
@@ -112,114 +111,17 @@ async def supabase_auth_middleware(
         response = await call_next(request)
         response.headers["Cache-Control"] = "no-store"
         return response
-    # Active membership is required before any application data.
-    # Identity key is ONLY users.supabase_user_id. Email is display-only.
-    # The resolved workspace becomes the request tenant scope: the ORM layer
-    # auto-filters every tenant-owned query and PostgreSQL RLS enforces it.
-    resolved_workspace_id: str | None = None
+    # Novel is a single internal tenant. The dependency layer auto-creates the
+    # application profile and membership after Supabase authenticates the user.
+    # Resolve the fixed tenant here so ORM/RLS scope is still applied.
     try:
         with SessionLocal() as session:
-            profile = session.scalar(
-                select(User).where(User.supabase_user_id == supabase_user.sub)
-            )
-            if profile is None and settings.auth_allow_email_fallback_linking:
-                # Development migration window only. Production keeps this
-                # disabled: email is display-only, never an identity key.
-                candidate = (
-                    session.scalar(
-                        select(User).where(
-                            User.email == (supabase_user.email or "").lower(),
-                            User.is_active.is_(True),
-                        )
-                    )
-                    if supabase_user.email
-                    else None
-                )
-                if candidate is not None and candidate.supabase_user_id is None:
-                    candidate.supabase_user_id = supabase_user.sub
-                    session.commit()
-                    session.refresh(candidate)
-                    audit_event(
-                        "membership_changed",
-                        supabase_user_id=supabase_user.sub,
-                        email=supabase_user.email,
-                        extra={"reason": "fallback_email_link"},
-                    )
-                    profile = candidate
-            if profile is None or not profile.is_active:
-                audit_event(
-                    "authorization_failed",
-                    supabase_user_id=supabase_user.sub,
-                    email=supabase_user.email,
-                    extra={"reason": "no_membership"},
-                )
-                return JSONResponse(
-                    status_code=403,
-                    content={
-                        "code": "FORBIDDEN",
-                        "message": "Access is not configured for this account",
-                    },
-                )
-            memberships = list(
-                session.scalars(
-                    select(WorkspaceMember)
-                    .where(WorkspaceMember.user_id == profile.id)
-                    .order_by(WorkspaceMember.workspace_id)
-                ).all()
-            )
-            if not memberships:
-                audit_event(
-                    "authorization_failed",
-                    supabase_user_id=supabase_user.sub,
-                    email=supabase_user.email,
-                    extra={"reason": "no_membership"},
-                )
-                return JSONResponse(
-                    status_code=403,
-                    content={
-                        "code": "WORKSPACE_REQUIRED",
-                        "message": "Access is not configured for this account",
-                    },
-                )
-            requested_id = request.headers.get("x-workspace-id") or request.query_params.get(
-                "workspace_id"
-            )
-            if requested_id:
-                # Never trust the client ID without verifying membership, and
-                # never reveal whether the workspace exists.
-                if not any(str(member.workspace_id) == requested_id for member in memberships):
-                    audit_event(
-                        "authorization_failed",
-                        supabase_user_id=supabase_user.sub,
-                        email=supabase_user.email,
-                        extra={"reason": "workspace_forbidden"},
-                    )
-                    return JSONResponse(
-                        status_code=403,
-                        content={
-                            "code": "FORBIDDEN",
-                            "message": "Access is not configured for this account",
-                        },
-                    )
-                resolved_workspace_id = requested_id
-            else:
-                resolved_workspace_id = str(memberships[0].workspace_id)
-            if request.method in {"POST", "PUT", "PATCH", "DELETE"} and not any(
-                can_write(member.role) for member in memberships
-            ):
-                audit_event(
-                    "authorization_failed",
-                    supabase_user_id=supabase_user.sub,
-                    email=supabase_user.email,
-                    extra={"reason": "viewer_write_blocked"},
-                )
-                return JSONResponse(
-                    status_code=403,
-                    content={
-                        "code": "FORBIDDEN",
-                        "message": "Access is not configured for this account",
-                    },
-                )
+            workspace = session.scalar(select(Workspace).where(Workspace.name == "Novel"))
+            if workspace is None:
+                workspace = Workspace(name="Novel")
+                session.add(workspace)
+                session.flush()
+            resolved_workspace_id = str(workspace.id)
     except Exception:
         # If the database is unavailable, fail closed without leaking details.
         return JSONResponse(

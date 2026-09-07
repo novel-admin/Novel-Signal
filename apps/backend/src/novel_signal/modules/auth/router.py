@@ -102,19 +102,36 @@ def _workspaces_for_profile(session: Session, profile: User) -> list[WorkspaceRo
 
 
 def _profile_for_user(session: Session, user: SupabaseUser) -> User | None:
-    """Identity key is ONLY supabase_user_id. Email is display-only."""
-    from novel_signal.config import get_settings
-
+    """Provision a Supabase Dashboard user into Novel's fixed tenant."""
     profile = session.scalar(select(User).where(User.supabase_user_id == user.sub))
-    if profile is None and user.email and get_settings().auth_allow_email_fallback_linking:
-        candidate = session.scalar(
-            select(User).where(User.email == user.email.lower(), User.is_active.is_(True))
+    if profile is None and user.email:
+        profile = session.scalar(select(User).where(User.email == user.email.lower()))
+        if profile is not None:
+            if profile.supabase_user_id not in (None, user.sub):
+                profile = None
+            else:
+                profile.supabase_user_id = user.sub
+        else:
+            profile = User(email=user.email.lower(), supabase_user_id=user.sub, is_active=True)
+            session.add(profile)
+            session.flush()
+    if profile is not None:
+        workspace = session.scalar(select(Workspace).where(Workspace.name == "Novel"))
+        if workspace is None:
+            workspace = Workspace(name="Novel")
+            session.add(workspace)
+            session.flush()
+        membership = session.scalar(
+            select(WorkspaceMember).where(
+                WorkspaceMember.workspace_id == workspace.id,
+                WorkspaceMember.user_id == profile.id,
+            )
         )
-        if candidate is not None and candidate.supabase_user_id is None:
-            candidate.supabase_user_id = user.sub
-            session.commit()
-            session.refresh(candidate)
-            profile = candidate
+        if membership is None:
+            session.add(
+                WorkspaceMember(workspace_id=workspace.id, user_id=profile.id, role="viewer")
+            )
+        session.commit()
     if profile is not None and not profile.is_active:
         return None
     return profile

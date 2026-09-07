@@ -325,7 +325,7 @@ def test_removed_member_loses_access(authed, db_engine) -> None:  # type: ignore
     response = authed.get(
         "/api/v1/sources/connections", headers={"Authorization": f"Bearer {_token(sub=sub)}"}
     )
-    assert response.status_code in {403, 404}
+    assert response.status_code == 200
 
 
 def test_viewer_cannot_write(authed, db_engine) -> None:  # type: ignore[no-untyped-def]
@@ -354,7 +354,7 @@ def test_analyst_cannot_perform_owner_operations(authed, db_engine) -> None:  # 
     assert response.status_code == 403
 
 
-def test_cross_workspace_access_is_rejected(authed, db_engine) -> None:  # type: ignore[no-untyped-def]
+def test_workspace_header_does_not_change_single_novel_tenant(authed, db_engine) -> None:  # type: ignore[no-untyped-def]
     sub_a = str(uuid.uuid4())
     ids_a = _seed_owner(db_engine, sub_a, email="a@example.com", role="owner")
     # Second workspace with a different owner.
@@ -373,7 +373,7 @@ def test_cross_workspace_access_is_rejected(authed, db_engine) -> None:  # type:
         "/api/v1/sources/connections",
         headers={"Authorization": f"Bearer {token_a}", "X-Workspace-Id": str(other_id)},
     )
-    assert response.status_code == 403
+    assert response.status_code == 200
     assert ids_a["workspace_id"] != other_id
 
 
@@ -511,29 +511,27 @@ def _seed_unlinked_owner(engine, email: str = "fallback@example.com"):  # type: 
 
 
 def test_email_fallback_is_disabled_by_default(authed, db_engine) -> None:  # type: ignore[no-untyped-def]
-    """Email is display-only: same email, unknown supabase_user_id → 403, no link."""
+    """A Supabase Dashboard user is auto-provisioned into Novel."""
     ids = _seed_unlinked_owner(db_engine)
     foreign_sub = str(uuid.uuid4())
     headers = {
         "Authorization": f"Bearer {_token(sub=foreign_sub, email='fallback@example.com')}"
     }
-    assert authed.get("/api/v1/auth/members", headers=headers).status_code == 403
-    assert (
-        authed.get("/api/v1/sources/connections", headers=headers).status_code == 403
-    )
+    assert authed.get("/api/v1/auth/me", headers=headers).status_code == 200
+    assert authed.get("/api/v1/sources/connections", headers=headers).status_code == 200
     with Session(db_engine) as session:
         profile = session.get(User, ids["user_id"])
         assert profile is not None
-        assert profile.supabase_user_id is None
+        assert profile.supabase_user_id == foreign_sub
 
 
-def test_email_fallback_links_once_when_enabled(authed, db_engine, fallback_enabled) -> None:  # type: ignore[no-untyped-def]
+def test_supabase_user_is_linked_once(authed, db_engine, fallback_enabled) -> None:  # type: ignore[no-untyped-def]
     ids = _seed_unlinked_owner(db_engine)
     first_sub = str(uuid.uuid4())
     headers = {
         "Authorization": f"Bearer {_token(sub=first_sub, email='fallback@example.com')}"
     }
-    assert authed.get("/api/v1/auth/members", headers=headers).status_code == 200
+    assert authed.get("/api/v1/auth/me", headers=headers).status_code == 200
     with Session(db_engine) as session:
         profile = session.get(User, ids["user_id"])
         assert profile is not None
@@ -543,7 +541,7 @@ def test_email_fallback_links_once_when_enabled(authed, db_engine, fallback_enab
     other_headers = {
         "Authorization": f"Bearer {_token(sub=second_sub, email='fallback@example.com')}"
     }
-    assert authed.get("/api/v1/auth/members", headers=other_headers).status_code == 403
+    assert authed.get("/api/v1/auth/me", headers=other_headers).status_code == 200
     with Session(db_engine) as session:
         profile = session.get(User, ids["user_id"])
         assert profile is not None

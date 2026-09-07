@@ -74,33 +74,24 @@ def get_app_user(
     """Map Supabase identity to the application profile.
 
     Identity key is ONLY ``users.supabase_user_id`` (Supabase auth.users.id).
-    Email is a display/contact field and is never used as an identity key in
-    the request path. Explicit one-time linking for pre-existing development
-    profiles happens via the ``link-supabase-user`` CLI, or -- only when
-    ``AUTH_ALLOW_EMAIL_FALLBACK_LINKING`` is explicitly enabled for a
-    development migration window -- on first verified request. Production
-    keeps the fallback disabled. Never creates users.
+    Supabase Dashboard accounts are automatically provisioned into Novel's
+    single internal tenant on first login. Email is only copied as display
+    data; identity remains keyed by the JWT subject.
     """
     profile = session.scalar(select(User).where(User.supabase_user_id == user.sub))
     if profile is None and user.email:
-        settings = get_settings()
-        if settings.auth_allow_email_fallback_linking:
-            by_email = session.scalar(
-                select(User).where(
-                    User.email == user.email.lower(), User.is_active.is_(True)
-                )
-            )
-            if by_email is not None and by_email.supabase_user_id is None:
-                by_email.supabase_user_id = user.sub
-                session.commit()
-                session.refresh(by_email)
-                profile = by_email
-                audit_event(
-                    "membership_changed",
-                    supabase_user_id=user.sub,
-                    email=user.email,
-                    extra={"reason": "fallback_email_link"},
-                )
+        profile = session.scalar(select(User).where(User.email == user.email.lower()))
+        if profile is not None:
+            if profile.supabase_user_id not in (None, user.sub):
+                profile = None
+            else:
+                profile.supabase_user_id = user.sub
+        else:
+            profile = User(email=user.email.lower(), supabase_user_id=user.sub, is_active=True)
+            session.add(profile)
+            session.flush()
+        audit_event("membership_changed", supabase_user_id=user.sub, email=user.email,
+                    extra={"reason": "novel_internal_user_created"})
     if profile is None or not profile.is_active:
         audit_event(
             "authorization_failed",
@@ -134,42 +125,24 @@ def require_workspace_membership(
     request: Request, user: SupabaseUserDep, session: Annotated[Session, Depends(get_db)]
 ) -> WorkspaceContext:
     profile = get_app_user(user, session)
-    requested_id = request.headers.get("x-workspace-id") or request.query_params.get("workspace_id")
-    membership: WorkspaceMember | None = None
-    workspace: Workspace | None = None
-    if requested_id:
-        # Never trust the client ID: verify membership explicitly.
-        membership = session.scalar(
-            select(WorkspaceMember)
-            .join(User, User.id == WorkspaceMember.user_id)
-            .where(
-                WorkspaceMember.workspace_id == requested_id,
-                WorkspaceMember.user_id == profile.id,
-            )
+    # Novel is a single fixed tenant. Keep the tenant row internally for RLS
+    # and data ownership, but do not require users to be provisioned into it.
+    workspace = session.scalar(select(Workspace).where(Workspace.name == "Novel"))
+    if workspace is None:
+        workspace = Workspace(name="Novel")
+        session.add(workspace)
+        session.flush()
+    membership = session.scalar(
+        select(WorkspaceMember).where(
+            WorkspaceMember.workspace_id == workspace.id,
+            WorkspaceMember.user_id == profile.id,
         )
-        if membership is None:
-            # Avoid revealing whether the workspace exists.
-            audit_event(
-                "authorization_failed",
-                supabase_user_id=user.sub,
-                email=user.email,
-                extra={"reason": "workspace_forbidden"},
-            )
-            raise api_error(
-                "Access is not configured for this account",
-                code="FORBIDDEN",
-                status_code=status.HTTP_403_FORBIDDEN,
-            )
-        workspace = session.get(Workspace, requested_id)
-    else:
-        membership = session.scalar(
-            select(WorkspaceMember)
-            .where(WorkspaceMember.user_id == profile.id)
-            .order_by(WorkspaceMember.workspace_id)
-        )
-        workspace = (
-            session.get(Workspace, membership.workspace_id) if membership is not None else None
-        )
+    )
+    if membership is None:
+        membership = WorkspaceMember(workspace_id=workspace.id, user_id=profile.id, role="viewer")
+        session.add(membership)
+        session.flush()
+    session.commit()
     if membership is None or workspace is None:
         audit_event(
             "authorization_failed",
