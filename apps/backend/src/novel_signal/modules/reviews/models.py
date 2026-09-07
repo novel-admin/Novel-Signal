@@ -20,13 +20,14 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column
 
 from novel_signal.db import Base
+from novel_signal.tenant import WorkspaceOwnedMixin
 
 
 def new_id() -> str:
     return str(uuid.uuid4())
 
 
-class ReviewObservation(Base):
+class ReviewObservation(WorkspaceOwnedMixin, Base):
     __tablename__ = "review_observations"
     __table_args__ = (
         UniqueConstraint("source", "source_review_id", name="uq_review_source_identity"),
@@ -59,7 +60,7 @@ class ReviewObservation(Base):
     )
 
 
-class ReviewTopic(Base):
+class ReviewTopic(WorkspaceOwnedMixin, Base):
     __tablename__ = "review_topics"
     __table_args__ = (UniqueConstraint("review_id", "topic", name="uq_review_topic"),)
 
@@ -73,7 +74,7 @@ class ReviewTopic(Base):
     confidence: Mapped[str] = mapped_column(String(20), nullable=False, default="low")
 
 
-class ReviewTopicTrend(Base):
+class ReviewTopicTrend(WorkspaceOwnedMixin, Base):
     __tablename__ = "review_topic_trends"
     __table_args__ = (
         UniqueConstraint("target_id", "period_start", "topic", name="uq_review_topic_trend"),

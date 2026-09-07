@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 import uuid
 from datetime import datetime
+from typing import Any
 from urllib.parse import urlparse
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -11,6 +12,7 @@ from novel_signal.modules.universe.models import (
     BattleCardStatus,
     Marketplace,
     PositioningTier,
+    ProposalStatus,
     TrackingTier,
 )
 
@@ -543,3 +545,65 @@ class CsvValidationResult(BaseModel):
 class CsvImportResult(BaseModel):
     imported_rows: int
     entity: str
+
+
+class ProductMinimalImportResult(BaseModel):
+    imported_rows: int
+    invalid_rows: int
+    imported_skus: list[str]
+    errors: list[CsvRowError]
+
+
+class CompetitorProposalRead(ReadModel):
+    id: uuid.UUID
+    fingerprint: str
+    marketplace: Marketplace
+    marketplace_product_id: str
+    brand: str | None
+    title: str | None
+    status: ProposalStatus
+    score: float | None
+    score_breakdown: dict[str, Any] | None = None
+    appearances: int
+    best_rank: int | None
+    first_seen_keyword_id: uuid.UUID | None
+    first_seen_at: datetime | None
+    evidence: dict[str, Any] | None = None
+    linked_competitor_product_id: uuid.UUID | None
+    decided_at: datetime | None
+    created_at: datetime
+    updated_at: datetime
+
+
+class CompetitorProposalList(ReadModel):
+    items: list[CompetitorProposalRead]
+    total: int
+    limit: int
+    offset: int
+
+
+class ProposalBuildResult(ReadModel):
+    created: int
+    updated: int
+    pending: int
+
+
+class ProposalApproveRequest(BaseModel):
+    competitor_id: uuid.UUID | None = None
+    competitor_name: str | None = Field(default=None, min_length=1, max_length=255)
+    battle_card_id: uuid.UUID | None = None
+    category: str | None = Field(default=None, max_length=255)
+    tracking_tier: TrackingTier = TrackingTier.T3
+
+
+class GeneratedKeywordSummary(ReadModel):
+    keyword_id: uuid.UUID
+    keyword_text: str
+    created: bool
+
+
+class ProductKeywordGenerationResult(ReadModel):
+    product_id: uuid.UUID
+    created_keywords: list[GeneratedKeywordSummary]
+    reused_keywords: list[GeneratedKeywordSummary]
+    tracking_targets_created: int

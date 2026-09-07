@@ -21,6 +21,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from novel_signal.db import Base
 from novel_signal.modules.universe.models import Marketplace, enum_column
+from novel_signal.tenant import WorkspaceOwnedMixin
 
 
 class DeviceProfile(StrEnum):
@@ -51,7 +52,7 @@ class BadgeEventType(StrEnum):
     LOST = "lost"
 
 
-class SerpCapture(Base):
+class SerpCapture(WorkspaceOwnedMixin, Base):
     __tablename__ = "serp_captures"
     __table_args__ = (
         CheckConstraint("length(trim(geo_code)) > 0", name="geo_code_not_blank"),
@@ -102,7 +103,7 @@ class SerpCapture(Base):
     )
 
 
-class SerpResult(Base):
+class SerpResult(WorkspaceOwnedMixin, Base):
     __tablename__ = "serp_results"
     __table_args__ = (
         CheckConstraint("absolute_position > 0", name="absolute_position_positive"),
@@ -172,7 +173,7 @@ class SerpResult(Base):
     capture: Mapped[SerpCapture] = relationship(back_populates="results")
 
 
-class GoogleSerpCapture(Base):
+class GoogleSerpCapture(WorkspaceOwnedMixin, Base):
     """One immutable normalized Google organic SERP observation."""
 
     __tablename__ = "google_serp_captures"
@@ -231,7 +232,7 @@ class GoogleSerpCapture(Base):
     )
 
 
-class GoogleSerpResult(Base):
+class GoogleSerpResult(WorkspaceOwnedMixin, Base):
     """A safe public organic destination observed in a Google capture."""
 
     __tablename__ = "google_serp_results"
@@ -275,7 +276,7 @@ class GoogleSerpResult(Base):
     capture: Mapped[GoogleSerpCapture] = relationship(back_populates="results")
 
 
-class BadgeEvent(Base):
+class BadgeEvent(WorkspaceOwnedMixin, Base):
     __tablename__ = "badge_events"
     __table_args__ = (
         UniqueConstraint(
@@ -313,7 +314,7 @@ class BadgeEvent(Base):
     )
 
 
-class NewEntrantEvent(Base):
+class NewEntrantEvent(WorkspaceOwnedMixin, Base):
     __tablename__ = "new_entrant_events"
     __table_args__ = (
         UniqueConstraint(

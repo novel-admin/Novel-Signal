@@ -1,9 +1,10 @@
 import pytest
 from cryptography.fernet import Fernet
+from novel_signal.api.dependencies import WorkspaceContext
 from novel_signal.config import Settings
 from novel_signal.db import Base
 from novel_signal.modules.auth.crypto import decrypt_credentials
-from novel_signal.modules.auth.models import SourceCredential, User, Workspace
+from novel_signal.modules.auth.models import SourceCredential, User, Workspace, WorkspaceMember
 from novel_signal.sources.router import ConnectionWrite, save_connection
 from sqlalchemy import create_engine, event
 from sqlalchemy.orm import Session
@@ -28,10 +29,18 @@ def test_source_connection_stores_only_encrypted_credentials(
     monkeypatch.setattr("novel_signal.sources.router.get_settings", lambda: settings)
 
     with Session(engine) as session:
-        user = User(email="owner@example.com", password_hash="hash")
+        user = User(email="owner@example.com", password_hash=None)
         workspace = Workspace(name="Workspace")
         session.add_all([user, workspace])
         session.flush()
+        membership = WorkspaceMember(
+            workspace_id=workspace.id, user_id=user.id, role="owner"
+        )
+        session.add(membership)
+        session.commit()
+        context = WorkspaceContext(
+            workspace=workspace, membership=membership, profile=user
+        )
         result = save_connection(
             "amazon_ads",
             ConnectionWrite(
@@ -39,7 +48,7 @@ def test_source_connection_stores_only_encrypted_credentials(
                 scopes=["reports"],
                 credentials={"refresh_token": "do-not-return"},
             ),
-            workspace,
+            context,
             session,
         )
 

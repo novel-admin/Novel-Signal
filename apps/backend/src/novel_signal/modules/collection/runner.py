@@ -30,10 +30,12 @@ from novel_signal.modules.collection.models import (
 )
 from novel_signal.modules.collection.repository import CollectionRepository
 from novel_signal.modules.collection.service import (
+    AttemptClaim,
     CollectionLifecycleService,
     CollectionPlanningService,
     utc_now,
 )
+from novel_signal.tenant import tenant_scope
 
 
 def register_builtin_executors() -> None:
@@ -65,10 +67,18 @@ def run_collection_job(job_id: uuid.UUID, *, worker_id: str | None = None) -> di
         lifecycle = CollectionLifecycleService(session)
         claim = lifecycle.claim_attempt(job_id, worker_id=current_worker)
         session.commit()
+        job_workspace_id = claim.job.workspace_id if claim is not None else None
 
     if claim is None:
         return {"job_id": str(job_id), "status": "not_claimed"}
 
+    # Tenant scope for every row the executors and lifecycle transitions
+    # create below (attempts, evidence, observations, quarantine records).
+    with tenant_scope(job_workspace_id):
+        return _execute_claimed_job(job_id, claim)
+
+
+def _execute_claimed_job(job_id: uuid.UUID, claim: AttemptClaim) -> dict[str, Any]:
     try:
         executor = get_executor(claim.item.platform, claim.item.job_type)
         result = execute_async(executor.execute(claim.item))

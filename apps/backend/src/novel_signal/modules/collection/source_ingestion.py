@@ -3,9 +3,15 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, datetime
 
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
-from novel_signal.modules.collection.models import ParserVersion, RawEvidence, RawEvidenceType
+from novel_signal.modules.collection.models import (
+    CollectionJob,
+    ParserVersion,
+    RawEvidence,
+    RawEvidenceType,
+)
 from novel_signal.modules.collection.repository import CollectionRepository
 from novel_signal.modules.collection.storage import RawObjectStore
 from novel_signal.sources.base import RawSourcePage
@@ -26,7 +32,16 @@ def persist_raw_source_page(
         page_type=page.resource_type,
         body=page.body,
     )
+    job: CollectionJob | None
+    try:
+        job = session.get(CollectionJob, job_id)
+    except SQLAlchemyError:
+        # Best-effort ownership derivation (e.g. subset-table unit fixtures
+        # without collection_jobs); the request/worker tenant scope remains
+        # the primary mechanism.
+        job = None
     evidence = RawEvidence(
+        workspace_id=job.workspace_id if job is not None else None,
         job_id=job_id,
         attempt_id=attempt_id,
         evidence_type=RawEvidenceType.RESPONSE_BODY,

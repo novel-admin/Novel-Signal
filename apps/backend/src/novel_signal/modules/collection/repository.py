@@ -42,6 +42,12 @@ class CollectionRepository:
             select(CollectionJob).where(CollectionJob.idempotency_key == idempotency_key)
         )
 
+    def keyword_workspace_id(self, keyword_id: uuid.UUID) -> str | None:
+        """Tenant owner of a keyword subject for job derivation."""
+        return self.session.scalar(
+            select(Keyword.workspace_id).where(Keyword.id == keyword_id)
+        )
+
     def create_job_if_absent(self, job: CollectionJob) -> tuple[CollectionJob, bool]:
         existing = self.get_job_by_key(job.idempotency_key)
         if existing is not None:

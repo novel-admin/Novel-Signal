@@ -18,13 +18,14 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from novel_signal.db import Base
+from novel_signal.tenant import WorkspaceOwnedMixin
 
 
 def new_id() -> str:
     return str(uuid.uuid4())
 
 
-class ChangeEvent(Base):
+class ChangeEvent(WorkspaceOwnedMixin, Base):
     __tablename__ = "change_events"
     __table_args__ = (UniqueConstraint("fingerprint", name="uq_change_events_fingerprint"),)
 
@@ -47,7 +48,7 @@ class ChangeEvent(Base):
     actions: Mapped[list[Action]] = relationship(back_populates="change_event")
 
 
-class Action(Base):
+class Action(WorkspaceOwnedMixin, Base):
     __tablename__ = "actions"
     __table_args__ = (
         CheckConstraint(
@@ -81,7 +82,7 @@ class Action(Base):
     )
 
 
-class ActionStatusHistory(Base):
+class ActionStatusHistory(WorkspaceOwnedMixin, Base):
     __tablename__ = "action_status_history"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
@@ -98,7 +99,7 @@ class ActionStatusHistory(Base):
     action: Mapped[Action] = relationship(back_populates="history")
 
 
-class Gap(Base):
+class Gap(WorkspaceOwnedMixin, Base):
     __tablename__ = "gaps"
     __table_args__ = (Index("ix_gaps_status_revenue", "status", "revenue_at_stake"),)
 
@@ -120,7 +121,7 @@ class Gap(Base):
     )
 
 
-class ActionImpact(Base):
+class ActionImpact(WorkspaceOwnedMixin, Base):
     __tablename__ = "action_impact"
     __table_args__ = (UniqueConstraint("action_id", "days_after", name="uq_action_impact_day"),)
 
@@ -138,7 +139,7 @@ class ActionImpact(Base):
     )
 
 
-class ActionDraft(Base):
+class ActionDraft(WorkspaceOwnedMixin, Base):
     """Evidence-constrained advisory draft; never an executable instruction."""
 
     __tablename__ = "action_drafts"

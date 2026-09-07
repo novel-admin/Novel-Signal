@@ -4,12 +4,14 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any
 
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session, sessionmaker
 
 from novel_signal.db import SessionLocal
 from novel_signal.modules.collection.execution import CollectionExecutionError
 from novel_signal.modules.collection.models import (
     CollectionFailureType,
+    CollectionJob,
     RawEvidence,
     RawEvidenceType,
 )
@@ -78,6 +80,12 @@ class RawEvidenceWriter:
         )
         try:
             with self.session_factory() as session:
+                try:
+                    job = session.get(CollectionJob, job_id)
+                except SQLAlchemyError:
+                    # Best-effort derivation; tenant scope is primary.
+                    job = None
+                evidence.workspace_id = job.workspace_id if job is not None else None
                 session.add(evidence)
                 session.commit()  # intentional raw-evidence durability boundary
                 session.refresh(evidence)

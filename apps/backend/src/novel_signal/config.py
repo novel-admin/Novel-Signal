@@ -13,6 +13,22 @@ class Settings(BaseSettings):
     internal_auth_secret: SecretStr = SecretStr("change-me")
     dashboard_access_code: SecretStr = SecretStr("")
     dashboard_auth_cookie: str = "novel_signal_dashboard"
+    # Supabase Auth (only identity provider). No service-role key is used by the app.
+    supabase_url: str = ""
+    supabase_anon_key: SecretStr = SecretStr("")
+    supabase_jwt_secret: SecretStr = SecretStr("")
+    supabase_jwks_url: str = ""
+    supabase_issuer: str = ""
+    supabase_audience: str = "authenticated"
+    supabase_jwks_cache_ttl_seconds: int = 600
+    frontend_url: str = "http://localhost:3000"
+    auth_rate_limit_per_minute: int = 30
+    # One-time development migration tool only. When true, the first request
+    # from a verified Supabase identity may link to an existing application
+    # profile with the same verified email. MUST remain false in production:
+    # email is a display/contact field, never an identity key. Production
+    # linking is done explicitly via the link-supabase-user CLI.
+    auth_allow_email_fallback_linking: bool = False
     source_encryption_key: SecretStr = SecretStr("")
     source_encryption_key_version: int = 1
     cors_origins: str = "http://localhost:3000"
@@ -41,6 +57,8 @@ class Settings(BaseSettings):
     collector_timeout_seconds: int = 45
     collector_max_attempts: int = 3
     collection_batch_size: int = 50
+    internal_scheduler_enabled: bool = True
+    internal_scheduler_interval_seconds: int = 60
     collector_failure_rate_warn_threshold: float = 0.05
     collector_freshness_warn_minutes: int = 60
     collector_completeness_warn_ratio: float = 0.98

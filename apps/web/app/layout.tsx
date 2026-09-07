@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import { AuthGate } from "../components/AuthGate";
-import { AppSidebar } from "../components/AppSidebar";
+import { AppShell } from "../components/AppShell";
 
 export const metadata: Metadata = {
   title: "Novel Signal",
@@ -22,7 +22,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
   return (
     <html lang="en">
       <body>
-        <AuthGate><div className="shell"><AppSidebar /><main className="content">{children}</main></div></AuthGate>
+        <AuthGate><AppShell>{children}</AppShell></AuthGate>
       </body>
     </html>
   );

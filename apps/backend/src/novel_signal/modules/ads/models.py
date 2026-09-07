@@ -18,13 +18,14 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column
 
 from novel_signal.db import Base
+from novel_signal.tenant import WorkspaceOwnedMixin
 
 
 def new_id() -> str:
     return str(uuid.uuid4())
 
 
-class AdObservation(Base):
+class AdObservation(WorkspaceOwnedMixin, Base):
     __tablename__ = "ad_observations"
     __table_args__ = (
         UniqueConstraint("fingerprint", name="uq_ad_observations_fingerprint"),
@@ -50,7 +51,7 @@ class AdObservation(Base):
     fingerprint: Mapped[str] = mapped_column(String(255), nullable=False)
 
 
-class AdPresenceDaily(Base):
+class AdPresenceDaily(WorkspaceOwnedMixin, Base):
     __tablename__ = "ad_presence_daily"
     __table_args__ = (
         UniqueConstraint("competitor_id", "keyword_id", "day", name="uq_ad_presence_daily_target"),
@@ -67,7 +68,7 @@ class AdPresenceDaily(Base):
     evidence_ref: Mapped[str | None] = mapped_column(Text)
 
 
-class AdDaypartProfile(Base):
+class AdDaypartProfile(WorkspaceOwnedMixin, Base):
     __tablename__ = "ad_daypart_profiles"
     __table_args__ = (
         UniqueConstraint(
@@ -84,7 +85,7 @@ class AdDaypartProfile(Base):
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="derived")
 
 
-class AdCreative(Base):
+class AdCreative(WorkspaceOwnedMixin, Base):
     __tablename__ = "ad_creatives"
     __table_args__ = (UniqueConstraint("platform", "external_id", name="uq_ad_creatives_external"),)
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
@@ -98,7 +99,7 @@ class AdCreative(Base):
     evidence_ref: Mapped[str | None] = mapped_column(Text)
 
 
-class ExternalAdRecord(Base):
+class ExternalAdRecord(WorkspaceOwnedMixin, Base):
     __tablename__ = "external_ad_records"
     __table_args__ = (UniqueConstraint("source", "external_id", name="uq_external_ads_source_id"),)
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
@@ -113,7 +114,7 @@ class ExternalAdRecord(Base):
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="measured")
 
 
-class SpendEstimate(Base):
+class SpendEstimate(WorkspaceOwnedMixin, Base):
     __tablename__ = "spend_estimates"
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
     competitor_id: Mapped[str] = mapped_column(String(36), nullable=False)
@@ -130,7 +131,7 @@ class SpendEstimate(Base):
     backtest_ref: Mapped[str | None] = mapped_column(String(255))
 
 
-class OwnAdPerformance(Base):
+class OwnAdPerformance(WorkspaceOwnedMixin, Base):
     __tablename__ = "own_ad_performance"
     __table_args__ = (
         UniqueConstraint(
@@ -156,7 +157,7 @@ class OwnAdPerformance(Base):
     evidence_ref: Mapped[str | None] = mapped_column(Text)
 
 
-class AmazonAdsSearchTermContribution(Base):
+class AmazonAdsSearchTermContribution(WorkspaceOwnedMixin, Base):
     __tablename__ = "amazon_ads_search_term_contributions"
     __table_args__ = (
         UniqueConstraint("fingerprint", name="uq_amazon_ads_search_term_fingerprint"),

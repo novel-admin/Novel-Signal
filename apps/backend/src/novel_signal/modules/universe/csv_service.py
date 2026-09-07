@@ -22,6 +22,7 @@ from novel_signal.modules.universe.models import (
 )
 from novel_signal.modules.universe.repository import UniverseRepository
 from novel_signal.modules.universe.schemas import (
+    AMAZON_ASIN_PATTERN,
     BattleCardFields,
     BattleCardItemCreate,
     CompetitorCreate,
@@ -30,6 +31,8 @@ from novel_signal.modules.universe.schemas import (
     CsvRowError,
     CsvValidationResult,
     ProductCreate,
+    ProductMinimalImportResult,
+    validate_optional_url,
 )
 
 CsvEntity = Literal[
@@ -614,3 +617,253 @@ class CsvValidationFailure(Exception):
     def __init__(self, result: CsvValidationResult) -> None:
         super().__init__("CSV validation failed")
         self.result = result
+
+
+MINIMAL_PRODUCT_COLUMNS: tuple[str, ...] = (
+    "internal_sku",
+    "marketplace_product_id",
+    "product_url",
+    "name",
+    "brand",
+    "category",
+    "pack_quantity",
+    "pack_unit",
+    "tracking_tier",
+)
+MINIMAL_PRODUCT_REQUIRED: tuple[str, ...] = (
+    "internal_sku",
+    "marketplace_product_id",
+    "product_url",
+)
+MINIMAL_DEFAULT_BRAND = "NOVEL"
+MINIMAL_DEFAULT_CATEGORY = "Unclassified"
+
+
+class MinimalProductCsvService:
+    """PM §1A product import contract.
+
+    Accepts the minimum ``internal_sku, marketplace_product_id, product_url``
+    upload plus optional enrichment fields. Invalid rows never block valid
+    rows: valid rows are imported and per-row errors are returned.
+    """
+
+    def __init__(self, session: Session) -> None:
+        self.session = session
+        self.repository = UniverseRepository(session)
+
+    def template(self) -> str:
+        output = io.StringIO(newline="")
+        writer = csv.DictWriter(output, fieldnames=MINIMAL_PRODUCT_COLUMNS, lineterminator="\n")
+        writer.writeheader()
+        writer.writerow(
+            {
+                "internal_sku": "NOV-WIPES-80X4",
+                "marketplace_product_id": "B09GP975ZQ",
+                "product_url": "https://www.amazon.in/dp/B09GP975ZQ",
+                "name": "Novel Baby Wipes 80 x 4",
+                "brand": "NOVEL",
+                "category": "Baby Wipes",
+                "pack_quantity": "4",
+                "pack_unit": "packs",
+                "tracking_tier": "T1",
+            }
+        )
+        return output.getvalue()
+
+    def validate(self, csv_text: str) -> CsvValidationResult:
+        _, errors, total, valid = self._parse_rows(csv_text)
+        invalid_rows = len({error.row for error in errors})
+        return CsvValidationResult(
+            valid=not errors,
+            total_rows=total,
+            valid_rows=valid,
+            invalid_rows=invalid_rows,
+            errors=errors,
+        )
+
+    def import_rows(self, csv_text: str) -> ProductMinimalImportResult:
+        records, errors, total, _ = self._parse_rows(csv_text)
+        imported_skus: list[str] = []
+        row_errors = list(errors)
+        seen_invalid = {error.row for error in row_errors}
+        for row_number, values in records:
+            if row_number in seen_invalid:
+                continue
+            try:
+                self.session.add(
+                    Product(
+                        internal_sku=values["internal_sku"],
+                        name=values["name"],
+                        brand=values["brand"],
+                        category=values["category"],
+                        marketplace=values["marketplace"],
+                        marketplace_product_id=values["marketplace_product_id"],
+                        product_url=values["product_url"],
+                        pack_quantity=values["pack_quantity"],
+                        pack_unit=values["pack_unit"],
+                        tracking_tier=values["tracking_tier"],
+                    )
+                )
+                self.session.commit()
+                imported_skus.append(values["internal_sku"])
+            except IntegrityError:
+                self.session.rollback()
+                row_errors.append(
+                    CsvRowError(
+                        row=row_number,
+                        field="internal_sku",
+                        code="database_conflict",
+                        message="Conflicts with an active database record",
+                    )
+                )
+            except Exception:
+                self.session.rollback()
+                raise
+        invalid_rows = len({error.row for error in row_errors})
+        return ProductMinimalImportResult(
+            imported_rows=len(imported_skus),
+            invalid_rows=invalid_rows,
+            imported_skus=imported_skus,
+            errors=row_errors,
+        )
+
+    def _parse_rows(
+        self, csv_text: str
+    ) -> tuple[list[tuple[int, dict[str, Any]]], list[CsvRowError], int, int]:
+        reader = csv.DictReader(io.StringIO(csv_text.lstrip("\ufeff")))
+        errors: list[CsvRowError] = []
+        if reader.fieldnames is None:
+            return [], [
+                CsvRowError(
+                    row=1, field="header", code="missing_header",
+                    message="CSV header row is required",
+                )
+            ], 0, 0
+        missing = [c for c in MINIMAL_PRODUCT_REQUIRED if c not in (reader.fieldnames or [])]
+        if missing:
+            errors.append(
+                CsvRowError(
+                    row=1, field="header", code="missing_columns",
+                    message=f"Missing columns: {', '.join(missing)}",
+                )
+            )
+            return [], errors, 0, 0
+        from novel_signal.modules.universe.models import Marketplace, TrackingTier
+
+        records: list[tuple[int, dict[str, Any]]] = []
+        seen_sku: dict[str, int] = {}
+        seen_identity: dict[str, int] = {}
+        try:
+            rows = [(n, dict(r)) for n, r in enumerate(reader, start=2)]
+        except csv.Error as error:
+            return [], [
+                CsvRowError(
+                    row=reader.line_num, field="row",
+                    code="malformed_csv", message=str(error),
+                )
+            ], 0, 0
+        valid = 0
+        for row_number, row in rows:
+            values = {(k or ""): (v or "") for k, v in row.items()}
+            sku = (values.get("internal_sku") or "").strip()
+            asin = (values.get("marketplace_product_id") or "").strip().upper()
+            url = (values.get("product_url") or "").strip()
+            row_errors: list[CsvRowError] = []
+            if not sku:
+                row_errors.append(
+                    CsvRowError(row=row_number, field="internal_sku",
+                                code="required", message="internal_sku is required")
+                )
+            if not asin or not AMAZON_ASIN_PATTERN.fullmatch(asin):
+                row_errors.append(
+                    CsvRowError(row=row_number, field="marketplace_product_id",
+                                code="invalid_asin",
+                                message="Amazon.in ASIN must be exactly 10 alphanumeric characters")
+                )
+            try:
+                validate_optional_url(url)
+            except ValueError:
+                row_errors.append(
+                    CsvRowError(row=row_number, field="product_url",
+                                code="invalid_url",
+                                message="must be a valid http or https URL")
+                )
+            if not url:
+                row_errors.append(
+                    CsvRowError(row=row_number, field="product_url",
+                                code="required", message="product_url is required")
+                )
+            if sku and sku in seen_sku:
+                row_errors.append(
+                    CsvRowError(row=row_number, field="internal_sku",
+                                code="duplicate_csv_row",
+                                message=f"Duplicates CSV row {seen_sku[sku]}")
+                )
+            if asin and asin in seen_identity:
+                row_errors.append(
+                    CsvRowError(row=row_number, field="marketplace_product_id",
+                                code="duplicate_csv_row",
+                                message=f"Duplicates CSV row {seen_identity[asin]}")
+                )
+            if sku and self.repository.active_product_sku_exists(sku):
+                row_errors.append(
+                    CsvRowError(row=row_number, field="internal_sku",
+                                code="database_conflict",
+                                message="Conflicts with an active database record")
+                )
+            if asin and self.repository.active_product_identity_exists(
+                Marketplace.AMAZON_IN, asin
+            ):
+                row_errors.append(
+                    CsvRowError(row=row_number, field="marketplace_product_id",
+                                code="database_conflict",
+                                message="Conflicts with an active database record")
+                )
+            pack_quantity: int | None = None
+            pack_raw = (values.get("pack_quantity") or "").strip()
+            if pack_raw:
+                try:
+                    pack_quantity = int(pack_raw)
+                    if pack_quantity <= 0:
+                        raise ValueError
+                except ValueError:
+                    row_errors.append(
+                        CsvRowError(row=row_number, field="pack_quantity",
+                                    code="invalid_value",
+                                    message="pack_quantity must be a positive integer")
+                    )
+            tier_raw = (values.get("tracking_tier") or "").strip().upper()
+            try:
+                tier = TrackingTier(tier_raw) if tier_raw else TrackingTier.T2
+            except ValueError:
+                row_errors.append(
+                    CsvRowError(row=row_number, field="tracking_tier",
+                                code="invalid_value",
+                                message="tracking_tier must be one of T1, T2, T3")
+                )
+                tier = TrackingTier.T2
+            if row_errors:
+                errors.extend(row_errors)
+                continue
+            seen_sku[sku] = row_number
+            seen_identity[asin] = row_number
+            records.append(
+                (
+                    row_number,
+                    {
+                        "internal_sku": sku,
+                        "marketplace_product_id": asin,
+                        "product_url": url,
+                        "name": (values.get("name") or "").strip() or sku,
+                        "brand": (values.get("brand") or "").strip() or MINIMAL_DEFAULT_BRAND,
+                        "category": (values.get("category") or "").strip()
+                        or MINIMAL_DEFAULT_CATEGORY,
+                        "marketplace": Marketplace.AMAZON_IN,
+                        "pack_quantity": pack_quantity,
+                        "pack_unit": (values.get("pack_unit") or "").strip() or None,
+                        "tracking_tier": tier,
+                    },
+                )
+            )
+            valid += 1
+        return records, errors, len(rows), valid

@@ -1,3 +1,4 @@
+import time
 from collections.abc import Iterator
 from datetime import UTC, datetime
 
@@ -125,6 +126,9 @@ def test_updated_at_changes_on_orm_update(engine: Engine) -> None:
         session.commit()
         previous_updated_at = competitor.updated_at
 
+        # Clock granularity can repeat within a microsecond on fast machines;
+        # sleep past it so the onupdate timestamp must advance.
+        time.sleep(0.002)
         competitor.notes = "Reviewed"
         session.commit()
 
