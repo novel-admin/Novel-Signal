@@ -2,9 +2,12 @@
 
 Enforcement order for every protected request::
 
-    Supabase JWT -> user identity -> email verification -> AAL2
+    Supabase JWT -> user identity (sub only, never email)
       -> active workspace membership -> role authorization
       -> resource ownership (workspace_id checked per query)
+
+Internal tool: any valid Supabase session is accepted. There is no
+email-verification gate and no MFA/AAL2 requirement.
 
 No workspace ID from the client is trusted without verifying membership.
 Frontend auth state is never trusted. Secrets are never logged or returned.
@@ -65,47 +68,8 @@ def get_supabase_user(request: Request) -> SupabaseUser:
 SupabaseUserDep = Annotated[SupabaseUser, Depends(get_supabase_user)]
 
 
-def require_verified_email(user: SupabaseUserDep) -> SupabaseUser:
-    if not user.email_verified:
-        audit_event(
-            "authorization_failed",
-            supabase_user_id=user.sub,
-            email=user.email,
-            extra={"reason": "email_unverified"},
-        )
-        raise api_error(
-            "Email verification is required",
-            code="EMAIL_UNVERIFIED",
-            status_code=status.HTTP_403_FORBIDDEN,
-        )
-    return user
-
-
-VerifiedUserDep = Annotated[SupabaseUser, Depends(require_verified_email)]
-
-
-def require_aal2(user: VerifiedUserDep) -> SupabaseUser:
-    """Protected application data requires AAL2. AAL1 is never downgraded."""
-    if not user.is_aal2:
-        audit_event(
-            "authorization_failed",
-            supabase_user_id=user.sub,
-            email=user.email,
-            extra={"reason": "mfa_required", "aal": user.aal},
-        )
-        raise api_error(
-            "Multi-factor authentication is required",
-            code="MFA_REQUIRED",
-            status_code=status.HTTP_403_FORBIDDEN,
-        )
-    return user
-
-
-AAL2UserDep = Annotated[SupabaseUser, Depends(require_aal2)]
-
-
 def get_app_user(
-    user: AAL2UserDep, session: Annotated[Session, Depends(get_db)]
+    user: SupabaseUserDep, session: Annotated[Session, Depends(get_db)]
 ) -> User:
     """Map Supabase identity to the application profile.
 
@@ -167,7 +131,7 @@ class WorkspaceContext:
 
 
 def require_workspace_membership(
-    request: Request, user: AAL2UserDep, session: Annotated[Session, Depends(get_db)]
+    request: Request, user: SupabaseUserDep, session: Annotated[Session, Depends(get_db)]
 ) -> WorkspaceContext:
     profile = get_app_user(user, session)
     requested_id = request.headers.get("x-workspace-id") or request.query_params.get("workspace_id")

@@ -32,7 +32,7 @@ export default function FirstLoginPage() {
         setError("This secure link is invalid or expired. Ask the owner for a new invite or password reset.");
         return;
       }
-      setStatus("Password set. Continue to email verification and MFA enrollment.");
+      setStatus("Password set. Continue to login.");
     } catch {
       setError("We could not reach the login service. Try again.");
     }
@@ -43,9 +43,9 @@ export default function FirstLoginPage() {
       <div className="eyebrow">Novel Signal</div>
       <h1>First login</h1>
       <p className="lede">
-        The platform owner creates every account in the Supabase Dashboard. Open the invite or
+        The platform administrator creates every account in the Supabase Dashboard. Open the invite or
         password-reset email, follow its secure link here, then set your password below. After
-        that: verify your email, enroll a TOTP authenticator, and reach AAL2 before accessing data.
+        that, log in with your email and password.
       </p>
       <form onSubmit={submit} className="auth-form">
         <label htmlFor="first-password">New password</label>

@@ -70,8 +70,11 @@ async def supabase_auth_middleware(
         f"{settings.api_v1_prefix}/health/live",
         f"{settings.api_v1_prefix}/health/ready",
     }
-    # Identity endpoints allow AAL1 so the frontend can detect MFA state.
-    # Everything else under /api/v1 requires verified email + AAL2 + membership.
+    # Identity endpoints are reachable with any valid session so the
+    # frontend can distinguish missing mapping/membership from expiry.
+    # Everything else under /api/v1 requires a mapped user + membership.
+    # Internal tool: no email-verification gate and no MFA/AAL2 requirement;
+    # any valid Supabase session (AAL1 or AAL2) is accepted.
     identity_paths = {
         f"{settings.api_v1_prefix}/auth/me",
         f"{settings.api_v1_prefix}/auth/workspaces",
@@ -101,33 +104,14 @@ async def supabase_auth_middleware(
     except SupabaseAuthError as error:
         audit_event("auth_failed", extra={"code": error.code})
         return _generic_401(error.code)
-    if not supabase_user.email_verified:
-        audit_event(
-            "authorization_failed",
-            supabase_user_id=supabase_user.sub,
-            email=supabase_user.email,
-            extra={"reason": "email_unverified"},
-        )
-        return JSONResponse(
-            status_code=403,
-            content={"code": "EMAIL_UNVERIFIED", "message": "Email verification is required"},
-        )
+    # Internal tool: email verification is not enforced here and there is
+    # no MFA/AAL2 requirement. Any valid Supabase session is accepted;
+    # membership and roles are enforced below.
     if path in identity_paths:
         request.state.supabase_user = supabase_user
         response = await call_next(request)
         response.headers["Cache-Control"] = "no-store"
         return response
-    if not supabase_user.is_aal2:
-        audit_event(
-            "authorization_failed",
-            supabase_user_id=supabase_user.sub,
-            email=supabase_user.email,
-            extra={"reason": "mfa_required", "aal": supabase_user.aal},
-        )
-        return JSONResponse(
-            status_code=403,
-            content={"code": "MFA_REQUIRED", "message": "Multi-factor authentication is required"},
-        )
     # Active membership is required before any application data.
     # Identity key is ONLY users.supabase_user_id. Email is display-only.
     # The resolved workspace becomes the request tenant scope: the ORM layer

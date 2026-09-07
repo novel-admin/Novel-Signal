@@ -31,7 +31,7 @@ export default function ResetPasswordPage() {
         setError("This reset link is invalid or expired. Request a new one.");
         return;
       }
-      setStatus("Password updated. Log in again and complete MFA if asked.");
+      setStatus("Password updated. Log in again with your new password.");
     } catch {
       setError("We could not reach the login service. Try again.");
     }
