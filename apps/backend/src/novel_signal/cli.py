@@ -12,7 +12,6 @@ from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import Column, String, update
 from sqlalchemy import Enum as SAEnum
 from sqlalchemy import String, update
 from sqlalchemy.orm import Session
@@ -31,7 +30,6 @@ from novel_signal.modules.ads.models import (
 )
 from novel_signal.modules.alerts.models import AlertEvent, AlertRule
 from novel_signal.modules.auth.models import User, Workspace, WorkspaceMember
-from novel_signal.modules.auth.service import password_hash
 from novel_signal.modules.collection import models as collection_models  # noqa: F401
 from novel_signal.modules.collection.runner import run_due_collection_jobs
 from novel_signal.modules.keywords.models import (
@@ -61,6 +59,7 @@ from novel_signal.modules.universe.models import (
     Product,
     TrackingTier,
 )
+from novel_signal.tenant import tenant_scope
 
 
 def _demo_value(column: Any, table_name: str, row_number: int, ids: dict[str, object]) -> object:
@@ -150,6 +149,13 @@ def _seed_all_empty_tables(session: Session) -> int:
     """Populate empty backend tables so every implemented API has demo data."""
     seeded = 0
     ids: dict[str, object] = {}
+    try:
+        demo_workspace_id = session.execute(
+            Workspace.__table__.select().limit(1)
+        ).first()
+        default_workspace_id = demo_workspace_id[0] if demo_workspace_id else None
+    except Exception:
+        default_workspace_id = None
     # Tables without declared foreign keys (several legacy intelligence tables)
     # still refer to the universe by convention, so load all existing IDs first.
     for table in Base.metadata.sorted_tables:
@@ -166,6 +172,9 @@ def _seed_all_empty_tables(session: Session) -> int:
             for column in table.columns
             if not column.nullable or column.primary_key
         }
+        # Core inserts bypass the ORM tenant auto-fill; stamp ownership here.
+        if "workspace_id" in table.c and default_workspace_id is not None:
+            values["workspace_id"] = default_workspace_id
         # These tables have business-level checks on nullable subject/origin FKs.
         if table.name == "collection_jobs" and ids.get("keywords"):
             values["keyword_id"] = ids["keywords"]
@@ -290,6 +299,12 @@ def main() -> int:
     collect_due.add_argument("--max-jobs", type=int, default=None)
     collect_due.add_argument("--worker-id", default=None)
     subcommands.add_parser("seed-demo", help="Seed the demo account and clearly marked sample data")
+    link = subcommands.add_parser(
+        "link-supabase-user",
+        help="One-time migration: link an existing application profile to a Supabase auth.users.id",
+    )
+    link.add_argument("--email", required=True, help="Application profile email (matched case-insensitively)")
+    link.add_argument("--supabase-id", required=True, help="Supabase auth.users.id (JWT sub)")
     args = parser.parse_args()
 
     if args.command == "collect-due":
@@ -310,7 +325,10 @@ def main() -> int:
                     session.execute(update(table).where(table.c.marketplace_product_id == "B0DEMO00001").values(marketplace_product_id="B0DEMO0001"))
             user = session.query(User).filter_by(email="demo@demo.com").one_or_none()
             if user is None:
-                user = User(email="demo@demo.com", password_hash=password_hash("demo123"))
+                # Local fixture only. Production auth is Supabase-only with no
+                # application passwords; link via supabase_user_id after creating
+                # the user in the Supabase Dashboard.
+                user = User(email="demo@demo.com", password_hash=None)
                 session.add(user)
                 session.flush()
             workspace = session.query(Workspace).filter_by(name="Demo workspace").one_or_none()
@@ -318,6 +336,9 @@ def main() -> int:
                 workspace = Workspace(name="Demo workspace")
                 session.add(workspace)
                 session.flush()
+            # Every demo row belongs to the demo workspace (auto-filled below).
+            _demo_scope = tenant_scope(str(workspace.id))
+            _demo_scope.__enter__()
             if session.query(WorkspaceMember).filter_by(workspace_id=workspace.id, user_id=user.id).one_or_none() is None:
                 session.add(WorkspaceMember(workspace_id=workspace.id, user_id=user.id, role="owner"))
             # A small, connected Novel universe makes every downstream fixture useful.
@@ -398,7 +419,27 @@ def main() -> int:
             seeded_tables = _seed_all_empty_tables(session)
             _repair_demo_contracts(session)
             session.commit()
+            _demo_scope.__exit__(None, None, None)
         print(json.dumps({"seeded": True, "tables_seeded": seeded_tables, "email": "demo@demo.com"}))
+        return 0
+    if args.command == "link-supabase-user":
+        # Explicit one-time migration tool. Email is matched only here, by an
+        # operator, never as an identity key in the request path.
+        with SessionLocal() as session:
+            user = (
+                session.query(User)
+                .filter_by(email=args.email.strip().lower())
+                .one_or_none()
+            )
+            if user is None:
+                print(json.dumps({"linked": False, "reason": "profile_not_found"}))
+                return 1
+            if user.supabase_user_id and user.supabase_user_id != args.supabase_id:
+                print(json.dumps({"linked": False, "reason": "already_linked_elsewhere"}))
+                return 1
+            user.supabase_user_id = args.supabase_id
+            session.commit()
+        print(json.dumps({"linked": True, "email": args.email.strip().lower()}))
         return 0
     return 2
 

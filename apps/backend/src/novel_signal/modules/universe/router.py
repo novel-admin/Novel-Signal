@@ -9,6 +9,7 @@ from novel_signal.db import get_db
 from novel_signal.modules.universe.csv_service import (
     CsvEntity,
     CsvValidationFailure,
+    MinimalProductCsvService,
     UniverseCsvService,
 )
 from novel_signal.modules.universe.errors import (
@@ -16,12 +17,15 @@ from novel_signal.modules.universe.errors import (
     UniverseNotFoundError,
     UniverseValidationError,
 )
+from novel_signal.modules.universe.keyword_generation import KeywordGenerationService
 from novel_signal.modules.universe.models import (
     BattleCardStatus,
     Marketplace,
     PositioningTier,
+    ProposalStatus,
     TrackingTier,
 )
+from novel_signal.modules.universe.proposals import ProposalService
 from novel_signal.modules.universe.schemas import (
     BattleCardCreate,
     BattleCardItemCreate,
@@ -38,15 +42,21 @@ from novel_signal.modules.universe.schemas import (
     CompetitorProductList,
     CompetitorProductRead,
     CompetitorProductUpdate,
+    CompetitorProposalList,
+    CompetitorProposalRead,
     CompetitorRead,
     CompetitorUpdate,
     CsvImportRequest,
     CsvImportResult,
     CsvValidationResult,
     ProductCreate,
+    ProductKeywordGenerationResult,
     ProductList,
+    ProductMinimalImportResult,
     ProductRead,
     ProductUpdate,
+    ProposalApproveRequest,
+    ProposalBuildResult,
 )
 from novel_signal.modules.universe.service import UniverseService
 
@@ -69,6 +79,29 @@ def get_csv_service(session: SessionDependency) -> UniverseCsvService:
 
 
 CsvServiceDependency = Annotated[UniverseCsvService, Depends(get_csv_service)]
+
+
+def get_minimal_csv_service(session: SessionDependency) -> MinimalProductCsvService:
+    return MinimalProductCsvService(session)
+
+
+MinimalCsvServiceDependency = Annotated[MinimalProductCsvService, Depends(get_minimal_csv_service)]
+
+
+def get_proposal_service(session: SessionDependency) -> ProposalService:
+    return ProposalService(session)
+
+
+ProposalServiceDependency = Annotated[ProposalService, Depends(get_proposal_service)]
+
+
+def get_keyword_generation_service(session: SessionDependency) -> KeywordGenerationService:
+    return KeywordGenerationService(session)
+
+
+KeywordGenerationDependency = Annotated[
+    KeywordGenerationService, Depends(get_keyword_generation_service)
+]
 
 
 def execute[ResultT](operation: Callable[[], ResultT]) -> ResultT:
@@ -135,6 +168,93 @@ def export_csv(
     include_archived: bool = False,
 ) -> Response:
     return csv_response(service.export(entity, include_archived=include_archived), f"{entity}.csv")
+
+
+@router.get("/products-minimal/template", response_class=Response)
+def download_minimal_product_template(service: MinimalCsvServiceDependency) -> Response:
+    return csv_response(service.template(), "products-minimal-template.csv")
+
+
+@router.post("/products-minimal/dry-run", response_model=CsvValidationResult)
+def dry_run_minimal_products(
+    payload: CsvImportRequest, service: MinimalCsvServiceDependency
+) -> CsvValidationResult:
+    return service.validate(payload.csv_text)
+
+
+@router.post("/products-minimal/import", response_model=ProductMinimalImportResult)
+def import_minimal_products(
+    payload: CsvImportRequest, service: MinimalCsvServiceDependency
+) -> ProductMinimalImportResult:
+    return service.import_rows(payload.csv_text)
+
+
+@router.get("/competitor-proposals", response_model=CompetitorProposalList)
+def list_competitor_proposals(
+    service: ProposalServiceDependency,
+    status: ProposalStatus | None = None,
+    limit: Limit = 50,
+    offset: Offset = 0,
+) -> CompetitorProposalList:
+    items, total = service.list_proposals(status=status, limit=limit, offset=offset)
+    return CompetitorProposalList(
+        items=[CompetitorProposalRead.model_validate(item) for item in items],
+        total=total,
+        limit=limit,
+        offset=offset,
+    )
+
+
+@router.post("/competitor-proposals/build", response_model=ProposalBuildResult)
+def build_competitor_proposals(service: ProposalServiceDependency) -> ProposalBuildResult:
+    result = execute(service.build_from_new_entrants)
+    return ProposalBuildResult(**result)
+
+
+@router.post("/competitor-proposals/{entity_id}/approve", response_model=CompetitorProposalRead)
+def approve_competitor_proposal(
+    entity_id: uuid.UUID,
+    payload: ProposalApproveRequest,
+    service: ProposalServiceDependency,
+) -> CompetitorProposalRead:
+    return CompetitorProposalRead.model_validate(
+        execute(
+            lambda: service.approve(
+                entity_id,
+                competitor_id=payload.competitor_id,
+                competitor_name=payload.competitor_name,
+                battle_card_id=payload.battle_card_id,
+                category=payload.category,
+                tracking_tier=payload.tracking_tier,
+            )
+        )
+    )
+
+
+@router.post("/competitor-proposals/{entity_id}/reject", response_model=CompetitorProposalRead)
+def reject_competitor_proposal(
+    entity_id: uuid.UUID, service: ProposalServiceDependency
+) -> CompetitorProposalRead:
+    return CompetitorProposalRead.model_validate(execute(lambda: service.reject(entity_id)))
+
+
+@router.post("/competitor-proposals/{entity_id}/archive", response_model=CompetitorProposalRead)
+def archive_competitor_proposal(
+    entity_id: uuid.UUID, service: ProposalServiceDependency
+) -> CompetitorProposalRead:
+    return CompetitorProposalRead.model_validate(execute(lambda: service.archive(entity_id)))
+
+
+@router.post(
+    "/products/{entity_id}/generate-keywords",
+    response_model=ProductKeywordGenerationResult,
+)
+def generate_product_keywords(
+    entity_id: uuid.UUID, service: KeywordGenerationDependency
+) -> ProductKeywordGenerationResult:
+    return ProductKeywordGenerationResult.model_validate(
+        execute(lambda: service.generate_for_product(entity_id))
+    )
 
 
 def csv_response(content: str, filename: str) -> Response:

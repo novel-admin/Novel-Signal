@@ -21,6 +21,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from novel_signal.db import Base
 from novel_signal.modules.universe.models import Marketplace, enum_column
+from novel_signal.tenant import WorkspaceOwnedMixin
 
 
 class ListingChangeType(StrEnum):
@@ -29,7 +30,7 @@ class ListingChangeType(StrEnum):
     MODIFIED = "modified"
 
 
-class ListingSnapshot(Base):
+class ListingSnapshot(WorkspaceOwnedMixin, Base):
     __tablename__ = "listing_snapshots"
     __table_args__ = (
         CheckConstraint(
@@ -107,7 +108,7 @@ class ListingSnapshot(Base):
     )
 
 
-class ListingChangeEvent(Base):
+class ListingChangeEvent(WorkspaceOwnedMixin, Base):
     __tablename__ = "listing_change_events"
     __table_args__ = (
         UniqueConstraint(

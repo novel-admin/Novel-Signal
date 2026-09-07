@@ -22,6 +22,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from novel_signal.db import Base
 from novel_signal.modules.universe.models import enum_column, utc_now
+from novel_signal.tenant import WorkspaceOwnedMixin
 
 
 class CollectionJobType(StrEnum):
@@ -88,7 +89,7 @@ class DataQualityStatus(StrEnum):
     FAIL = "fail"
 
 
-class CollectionJob(Base):
+class CollectionJob(WorkspaceOwnedMixin, Base):
     __tablename__ = "collection_jobs"
     __table_args__ = (
         CheckConstraint("length(trim(idempotency_key)) > 0", name="idempotency_key_not_blank"),
@@ -177,7 +178,7 @@ class CollectionJob(Base):
     )
 
 
-class CollectionAttempt(Base):
+class CollectionAttempt(WorkspaceOwnedMixin, Base):
     __tablename__ = "collection_attempts"
     __table_args__ = (
         CheckConstraint("attempt_number > 0", name="attempt_number_positive"),
@@ -210,7 +211,7 @@ class CollectionAttempt(Base):
     quarantine_records: Mapped[list[QuarantineRecord]] = relationship(back_populates="attempt")
 
 
-class CollectionFailure(Base):
+class CollectionFailure(WorkspaceOwnedMixin, Base):
     __tablename__ = "collection_failures"
     __table_args__ = (
         CheckConstraint("length(trim(message)) > 0", name="message_not_blank"),
@@ -240,7 +241,7 @@ class CollectionFailure(Base):
     attempt: Mapped[CollectionAttempt | None] = relationship(back_populates="failures")
 
 
-class RawEvidence(Base):
+class RawEvidence(WorkspaceOwnedMixin, Base):
     __tablename__ = "raw_evidence"
     __table_args__ = (
         CheckConstraint("length(sha256) = 64", name="sha256_length"),
@@ -317,7 +318,7 @@ class ParserVersion(Base):
     )
 
 
-class QuarantineRecord(Base):
+class QuarantineRecord(WorkspaceOwnedMixin, Base):
     __tablename__ = "quarantine_records"
     __table_args__ = (
         CheckConstraint("length(trim(reason_code)) > 0", name="reason_code_not_blank"),
@@ -364,7 +365,7 @@ class QuarantineRecord(Base):
     )
 
 
-class DataQualityCheck(Base):
+class DataQualityCheck(WorkspaceOwnedMixin, Base):
     __tablename__ = "data_quality_checks"
     __table_args__ = (
         CheckConstraint("length(trim(scope_type)) > 0", name="scope_type_not_blank"),

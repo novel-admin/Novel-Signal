@@ -14,7 +14,14 @@ class User(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     email: Mapped[str] = mapped_column(String(320), unique=True, nullable=False, index=True)
-    password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    # Supabase Auth is the only identity provider. Application passwords are
+    # not used for production authentication; this column is nullable legacy.
+    password_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # Mapping to Supabase auth.users.id (JWT sub). Set for users created in
+    # the Supabase Dashboard and linked to an application profile.
+    supabase_user_id: Mapped[str | None] = mapped_column(
+        String(36), unique=True, nullable=True, index=True
+    )
     is_active: Mapped[bool] = mapped_column(nullable=False, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
@@ -42,8 +49,9 @@ class WorkspaceMember(Base):
     user_id: Mapped[str] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
     )
+    # owner > admin > analyst > viewer. Legacy "member" maps to viewer.
     role: Mapped[str] = mapped_column(
-        String(30), nullable=False, default="member", server_default="member"
+        String(30), nullable=False, default="viewer", server_default="viewer"
     )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
@@ -91,3 +99,20 @@ class SourceCredential(Base):
     key_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class AuthAuditEvent(Base):
+    """Append-only security audit log. Never stores secrets."""
+
+    __tablename__ = "auth_audit_events"
+
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    event_type: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
+    supabase_user_id: Mapped[str | None] = mapped_column(String(36), index=True)
+    email: Mapped[str | None] = mapped_column(String(320))
+    workspace_id: Mapped[str | None] = mapped_column(
+        ForeignKey("workspaces.id", ondelete="SET NULL"), index=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

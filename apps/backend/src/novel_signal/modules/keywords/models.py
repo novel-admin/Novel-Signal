@@ -29,6 +29,7 @@ from novel_signal.modules.universe.models import (
     TrackingTier,
     enum_column,
 )
+from novel_signal.tenant import WorkspaceOwnedMixin
 
 
 class KeywordSourceType(StrEnum):
@@ -58,7 +59,7 @@ class IntentCluster(StrEnum):
     UNCLASSIFIED = "unclassified"
 
 
-class Keyword(TimestampedArchiveMixin, Base):
+class Keyword(TimestampedArchiveMixin, WorkspaceOwnedMixin, Base):
     __tablename__ = "keywords"
     __table_args__ = (
         CheckConstraint("length(trim(keyword_text)) > 0", name="keyword_text_not_blank"),
@@ -117,7 +118,7 @@ class Keyword(TimestampedArchiveMixin, Base):
     )
 
 
-class KeywordSource(Base):
+class KeywordSource(WorkspaceOwnedMixin, Base):
     __tablename__ = "keyword_sources"
     __table_args__ = (
         UniqueConstraint(
@@ -154,7 +155,7 @@ class KeywordSource(Base):
     keyword: Mapped[Keyword] = relationship(back_populates="sources")
 
 
-class TrackingTarget(TimestampedArchiveMixin, Base):
+class TrackingTarget(TimestampedArchiveMixin, WorkspaceOwnedMixin, Base):
     __tablename__ = "tracking_targets"
     __table_args__ = (
         CheckConstraint(

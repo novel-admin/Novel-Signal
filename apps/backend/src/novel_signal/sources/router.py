@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from novel_signal.api.dependencies import WorkspaceDep
+from novel_signal.api.dependencies import WorkspaceContextDep
 from novel_signal.config import get_settings
 from novel_signal.db import get_db
 from novel_signal.modules.auth.crypto import encrypt_credentials
@@ -65,11 +65,11 @@ def list_sources() -> list[SourceStatus]:
 
 @router.get("/connections", response_model=list[ConnectionRead])
 def list_connections(
-    workspace: WorkspaceDep, session: Annotated[Session, Depends(get_db)]
+    context: WorkspaceContextDep, session: Annotated[Session, Depends(get_db)]
 ) -> list[ConnectionRead]:
     connections = session.scalars(
         select(SourceConnection)
-        .where(SourceConnection.workspace_id == workspace.id)
+        .where(SourceConnection.workspace_id == context.workspace.id)
         .order_by(SourceConnection.provider)
     )
     return [ConnectionRead.model_validate(item, from_attributes=True) for item in connections]
@@ -79,10 +79,17 @@ def list_connections(
 def save_connection(
     provider: str,
     payload: ConnectionWrite,
-    workspace: WorkspaceDep,
+    context: WorkspaceContextDep,
     session: Annotated[Session, Depends(get_db)],
 ) -> ConnectionRead:
     _connection_or_404(provider)
+    # Writes require analyst+; viewer is read-only (also enforced in middleware).
+    if context.role not in {"owner", "admin", "analyst"}:
+        raise HTTPException(
+            status_code=403,
+            detail={"code": "FORBIDDEN", "message": "Access is not configured for this account"},
+        )
+    workspace = context.workspace
     if not payload.credentials:
         raise HTTPException(status_code=422, detail={"code": "credentials_required"})
     connection = session.scalar(
@@ -117,10 +124,16 @@ def save_connection(
 @router.delete("/connections/{provider}", status_code=204)
 def delete_connection(
     provider: str,
-    workspace: WorkspaceDep,
+    context: WorkspaceContextDep,
     session: Annotated[Session, Depends(get_db)],
 ) -> None:
     _connection_or_404(provider)
+    if context.role not in {"owner", "admin", "analyst"}:
+        raise HTTPException(
+            status_code=403,
+            detail={"code": "FORBIDDEN", "message": "Access is not configured for this account"},
+        )
+    workspace = context.workspace
     connection = session.scalar(
         select(SourceConnection).where(
             SourceConnection.workspace_id == workspace.id,

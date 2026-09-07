@@ -8,13 +8,14 @@ from sqlalchemy import JSON, Date, DateTime, Float, Integer, String, Text, Uniqu
 from sqlalchemy.orm import Mapped, mapped_column
 
 from novel_signal.db import Base
+from novel_signal.tenant import WorkspaceOwnedMixin
 
 
 def new_id() -> str:
     return str(uuid.uuid4())
 
 
-class UnitsModelFit(Base):
+class UnitsModelFit(WorkspaceOwnedMixin, Base):
     __tablename__ = "units_model_fits"
     __table_args__ = (
         UniqueConstraint("platform", "marketplace", "category_node", "model_version"),
@@ -37,7 +38,7 @@ class UnitsModelFit(Base):
     )
 
 
-class UnitsEstimate(Base):
+class UnitsEstimate(WorkspaceOwnedMixin, Base):
     __tablename__ = "units_estimates"
     __table_args__ = (UniqueConstraint("entity_id", "observed_on", "model_version"),)
 
@@ -70,7 +71,7 @@ class UnitsEstimate(Base):
     )
 
 
-class MarketShareDaily(Base):
+class MarketShareDaily(WorkspaceOwnedMixin, Base):
     __tablename__ = "market_share_daily"
     __table_args__ = (UniqueConstraint("entity_id", "observed_on", "segment_key", "model_version"),)
 
@@ -96,7 +97,7 @@ class MarketShareDaily(Base):
     input_evidence: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
 
 
-class ModelBacktest(Base):
+class ModelBacktest(WorkspaceOwnedMixin, Base):
     __tablename__ = "units_model_backtests"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)

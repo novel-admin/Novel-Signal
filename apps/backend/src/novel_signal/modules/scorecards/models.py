@@ -8,13 +8,14 @@ from sqlalchemy import JSON, DateTime, Index, String, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from novel_signal.db import Base
+from novel_signal.tenant import WorkspaceOwnedMixin
 
 
 def new_id() -> str:
     return str(uuid.uuid4())
 
 
-class ScorecardCell(Base):
+class ScorecardCell(WorkspaceOwnedMixin, Base):
     __tablename__ = "scorecard_cells"
     __table_args__ = (
         UniqueConstraint(
@@ -43,7 +44,7 @@ class ScorecardCell(Base):
     )
 
 
-class ScorecardHistory(Base):
+class ScorecardHistory(WorkspaceOwnedMixin, Base):
     __tablename__ = "scorecard_history"
     __table_args__ = (Index("ix_scorecard_history_cell_measured", "cell_id", "measured_at"),)
 

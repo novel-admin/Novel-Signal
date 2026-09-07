@@ -3,12 +3,14 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, datetime
 from enum import StrEnum
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import (
+    JSON,
     Boolean,
     CheckConstraint,
     DateTime,
+    Float,
     ForeignKey,
     Index,
     Integer,
@@ -22,6 +24,7 @@ from sqlalchemy import Enum as SAEnum
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from novel_signal.db import Base
+from novel_signal.tenant import WorkspaceOwnedMixin
 
 if TYPE_CHECKING:
     from novel_signal.modules.keywords.models import TrackingTarget
@@ -53,6 +56,13 @@ class BattleCardStatus(StrEnum):
     APPROVED = "approved"
 
 
+class ProposalStatus(StrEnum):
+    PENDING = "pending"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+    ARCHIVED = "archived"
+
+
 def enum_column(enum_class: type[StrEnum], name: str) -> SAEnum:
     return SAEnum(
         enum_class,
@@ -76,7 +86,7 @@ class TimestampedArchiveMixin:
     archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
-class Competitor(TimestampedArchiveMixin, Base):
+class Competitor(TimestampedArchiveMixin, WorkspaceOwnedMixin, Base):
     __tablename__ = "competitors"
     __table_args__ = (
         CheckConstraint("length(trim(name)) > 0", name="name_not_blank"),
@@ -126,7 +136,7 @@ class Competitor(TimestampedArchiveMixin, Base):
     )
 
 
-class Product(TimestampedArchiveMixin, Base):
+class Product(TimestampedArchiveMixin, WorkspaceOwnedMixin, Base):
     __tablename__ = "products"
     __table_args__ = (
         CheckConstraint("length(trim(internal_sku)) > 0", name="internal_sku_not_blank"),
@@ -183,7 +193,7 @@ class Product(TimestampedArchiveMixin, Base):
     )
 
 
-class CompetitorProduct(TimestampedArchiveMixin, Base):
+class CompetitorProduct(TimestampedArchiveMixin, WorkspaceOwnedMixin, Base):
     __tablename__ = "competitor_products"
     __table_args__ = (
         CheckConstraint("length(trim(name)) > 0", name="name_not_blank"),
@@ -240,7 +250,7 @@ class CompetitorProduct(TimestampedArchiveMixin, Base):
     )
 
 
-class BattleCard(TimestampedArchiveMixin, Base):
+class BattleCard(TimestampedArchiveMixin, WorkspaceOwnedMixin, Base):
     __tablename__ = "battle_cards"
     __table_args__ = (
         CheckConstraint("length(trim(name)) > 0", name="name_not_blank"),
@@ -267,7 +277,68 @@ class BattleCard(TimestampedArchiveMixin, Base):
     )
 
 
-class BattleCardItem(TimestampedArchiveMixin, Base):
+class CompetitorProposal(TimestampedArchiveMixin, WorkspaceOwnedMixin, Base):
+    """Review queue for auto-discovered competitor ASINs.
+
+    Unapproved proposals are never part of scorecards, gaps, or alerts;
+    approval materialises a Competitor + CompetitorProduct pair.
+    """
+
+    __tablename__ = "competitor_proposals"
+    __table_args__ = (
+        CheckConstraint(
+            "length(trim(marketplace_product_id)) > 0",
+            name="proposal_marketplace_product_id_not_blank",
+        ),
+        CheckConstraint("appearances > 0", name="proposal_appearances_positive"),
+        CheckConstraint(
+            "best_rank IS NULL OR best_rank > 0", name="proposal_best_rank_positive"
+        ),
+        CheckConstraint(
+            "score IS NULL OR (score >= 0 AND score <= 100)", name="proposal_score_range"
+        ),
+        Index("ix_competitor_proposals_status_score", "status", "score"),
+        Index("ix_competitor_proposals_fingerprint", "fingerprint"),
+        Index(
+            "uq_competitor_proposals_active_identity",
+            "marketplace",
+            "marketplace_product_id",
+            unique=True,
+            postgresql_where=text("status = 'pending'"),
+            sqlite_where=text("status = 'pending'"),
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    fingerprint: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
+    marketplace: Mapped[Marketplace] = mapped_column(
+        enum_column(Marketplace, "proposal_marketplace"), nullable=False
+    )
+    marketplace_product_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    brand: Mapped[str | None] = mapped_column(String(255))
+    title: Mapped[str | None] = mapped_column(String(500))
+    status: Mapped[ProposalStatus] = mapped_column(
+        enum_column(ProposalStatus, "proposal_status"),
+        default=ProposalStatus.PENDING,
+        server_default=ProposalStatus.PENDING.value,
+        nullable=False,
+    )
+    score: Mapped[float | None] = mapped_column(Float)
+    score_breakdown: Mapped[dict[str, Any] | None] = mapped_column(JSON)
+    appearances: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    best_rank: Mapped[int | None] = mapped_column(Integer)
+    first_seen_keyword_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("keywords.id", ondelete="SET NULL")
+    )
+    first_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    evidence: Mapped[dict[str, Any] | None] = mapped_column(JSON)
+    linked_competitor_product_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("competitor_products.id", ondelete="SET NULL")
+    )
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class BattleCardItem(TimestampedArchiveMixin, WorkspaceOwnedMixin, Base):
     __tablename__ = "battle_card_items"
     __table_args__ = (
         CheckConstraint(

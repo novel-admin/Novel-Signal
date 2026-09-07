@@ -20,8 +20,8 @@ import { cn } from "../lib/cn";
 
 const groups = [
   { label: "Monitor", links: [["Overview", "/", LayoutDashboard], ["Keywords", "/keywords", Search], ["Rank & Visibility", "/rank-visibility", Search], ["Products", "/products", PackageSearch], ["Listing Intelligence", "/listing-intelligence", FileSearch], ["Price Monitoring", "/price-monitoring", ChartNoAxesCombined], ["Advertising", "/ads", Target], ["Changes", "/changes", Activity]] },
-  { label: "Decide", links: [["Scorecards", "/scorecards", ChartNoAxesCombined], ["Actions", "/actions", ClipboardCheck], ["Alerts", "/alerts", BellRing]] },
-  { label: "Manage", links: [["Universe", "/universe", Database], ["Sources", "/sources", KeyRound], ["Operations", "/operations", FileSearch], ["Settings", "/collection", Settings2]] },
+  { label: "Decide", links: [["Scorecards", "/scorecards", ChartNoAxesCombined], ["Gaps", "/gaps", Target], ["Actions", "/actions", ClipboardCheck], ["Alerts", "/alerts", BellRing]] },
+  { label: "Manage", links: [["Universe", "/universe", Database], ["Discovery", "/discovery", PackageSearch], ["Sources", "/sources", KeyRound], ["Operations", "/operations", FileSearch], ["Settings", "/collection", Settings2]] },
 ] as const;
 
 export function AppSidebar() {

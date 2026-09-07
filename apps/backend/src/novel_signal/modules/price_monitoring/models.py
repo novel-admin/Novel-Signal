@@ -23,6 +23,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from novel_signal.db import Base
 from novel_signal.modules.universe.models import Marketplace, enum_column
+from novel_signal.tenant import WorkspaceOwnedMixin
 
 
 class AvailabilityStatus(StrEnum):
@@ -46,7 +47,7 @@ class PriceEventType(StrEnum):
     BECAME_UNAVAILABLE = "became_unavailable"
 
 
-class PriceObservation(Base):
+class PriceObservation(WorkspaceOwnedMixin, Base):
     __tablename__ = "price_observations"
     __table_args__ = (
         CheckConstraint(
@@ -149,7 +150,7 @@ class PriceObservation(Base):
     )
 
 
-class SellerOffer(Base):
+class SellerOffer(WorkspaceOwnedMixin, Base):
     __tablename__ = "seller_offers"
     __table_args__ = (
         CheckConstraint("length(trim(seller_name)) > 0", name="seller_name_not_blank"),
@@ -197,7 +198,7 @@ class SellerOffer(Base):
     observation: Mapped[PriceObservation] = relationship(back_populates="offers")
 
 
-class PriceChangeEvent(Base):
+class PriceChangeEvent(WorkspaceOwnedMixin, Base):
     __tablename__ = "price_change_events"
     __table_args__ = (
         UniqueConstraint("observation_id", "event_type", name="uq_price_events_observation_type"),

@@ -121,6 +121,7 @@ class CollectionPlanningService:
             if entity_ids is not None and keyword_id not in entity_ids:
                 continue
             scheduled_for = cadence_slot(now, cadence_minutes)
+            keyword_workspace_id = self.repository.keyword_workspace_id(keyword_id)
             for platform in ("amazon_in", "google"):
                 if platforms is not None and platform not in platforms:
                     continue
@@ -132,6 +133,7 @@ class CollectionPlanningService:
                     scheduled_for=scheduled_for,
                 )
                 job = CollectionJob(
+                    workspace_id=keyword_workspace_id,
                     idempotency_key=key,
                     job_type=CollectionJobType.SERP,
                     source_tier=CollectionSourceTier.PUBLIC_PAGE,
@@ -158,6 +160,7 @@ class CollectionPlanningService:
                 scheduled_for=product_slot,
             )
             job = CollectionJob(
+                workspace_id=product.workspace_id,
                 idempotency_key=key,
                 job_type=CollectionJobType.PRODUCT_DETAIL,
                 source_tier=CollectionSourceTier.PUBLIC_PAGE,
@@ -183,6 +186,7 @@ class CollectionPlanningService:
                 scheduled_for=product_slot,
             )
             job = CollectionJob(
+                workspace_id=competitor_product.workspace_id,
                 idempotency_key=key,
                 job_type=CollectionJobType.PRODUCT_DETAIL,
                 source_tier=CollectionSourceTier.PUBLIC_PAGE,
@@ -243,6 +247,7 @@ class CollectionLifecycleService:
         attempt_number = job.attempt_count + 1
         attempt = CollectionAttempt(
             id=uuid.uuid4(),
+            workspace_id=job.workspace_id,
             job=job,
             attempt_number=attempt_number,
             status=CollectionAttemptStatus.RUNNING,
@@ -326,6 +331,7 @@ class CollectionLifecycleService:
         attempt.error_message = message
         self.repository.add_failure(
             CollectionFailure(
+                workspace_id=job.workspace_id,
                 job=job,
                 attempt=attempt,
                 failure_type=failure_type,
@@ -388,6 +394,7 @@ class CollectionLifecycleService:
         attempt.error_message = reason
         self.repository.add_failure(
             CollectionFailure(
+                workspace_id=job.workspace_id,
                 job=job,
                 attempt=attempt,
                 failure_type=failure_type,
@@ -400,6 +407,7 @@ class CollectionLifecycleService:
         )
         self.repository.add_quarantine(
             QuarantineRecord(
+                workspace_id=job.workspace_id,
                 job=job,
                 attempt=attempt,
                 raw_evidence=raw_evidence,

@@ -1,45 +1,96 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
-import { request } from "@novel-signal/api-client";
+import { usePathname, useRouter } from "next/navigation";
+import { useEffect, useState, type ReactNode } from "react";
+import { createClient } from "@/lib/supabase/client";
 
-export function AuthGate({ children }: { children: React.ReactNode }) {
-  const [ready, setReady] = useState(false);
-  const [authenticated, setAuthenticated] = useState(false);
-  const [email, setEmail] = useState("demo@demo.com");
-  const [password, setPassword] = useState("demo123");
-  const [error, setError] = useState<string | null>(null);
+const PUBLIC_PREFIXES = ["/login", "/verify-email", "/first-login", "/forgot-password", "/reset-password", "/mfa", "/auth"];
+
+type GateState =
+  | { status: "loading" }
+  | { status: "public" }
+  | { status: "ready" }
+  | { status: "error"; message: string };
+
+function isPublic(pathname: string): boolean {
+  return PUBLIC_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
+}
+
+function genericMessage(): string {
+  return "We could not reach the login service. Try again.";
+}
+
+/** Supabase-only gate. No signup. Enforces verified email + mandatory TOTP + AAL2. */
+export function AuthGate({ children }: { children: ReactNode }) {
+  const pathname = usePathname();
+  const router = useRouter();
+  const [state, setState] = useState<GateState>({ status: "loading" });
 
   useEffect(() => {
-    request<{ authenticated: boolean }>("/auth/session")
-      .then((result) => { setAuthenticated(result.authenticated); setReady(true); })
-      .catch(() => { setError("The backend is unavailable."); setReady(true); });
-  }, []);
-
-  async function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setError(null);
-    try {
-      await request("/auth/login", { method: "POST", body: { email, password } });
-      setAuthenticated(true);
-    } catch {
-      setError("Invalid email or password.");
+    if (isPublic(pathname)) {
+      setState({ status: "public" });
+      return;
     }
-  }
+    let cancelled = false;
+    (async () => {
+      try {
+        const supabase = createClient();
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+        if (cancelled) return;
+        if (!user) {
+          router.replace("/login");
+          return;
+        }
+        if (!user.email_confirmed_at && !user.confirmed_at) {
+          router.replace("/verify-email");
+          return;
+        }
+        const { data: factors } = await supabase.auth.mfa.listFactors();
+        if (cancelled) return;
+        const verified = (factors?.totp ?? []).filter((factor) => factor.status === "verified");
+        if (verified.length === 0) {
+          router.replace("/mfa/setup");
+          return;
+        }
+        const { data: aal } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+        if (cancelled) return;
+        if (aal?.currentLevel !== "aal2") {
+          router.replace("/mfa/challenge");
+          return;
+        }
+        // Never downgrade AAL2: verified factors + aal2 required to render data.
+        setState({ status: "ready" });
+      } catch {
+        if (!cancelled) setState({ status: "error", message: genericMessage() });
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [pathname, router]);
 
-  if (!ready) return <main className="content"><div className="state" role="status">Loading...</div></main>;
-  if (authenticated) return <>{children}</>;
-  return <main className="content auth-panel">
-    <div className="eyebrow">Novel Signal</div>
-    <h1>Dashboard access</h1>
-    <p className="lede">Sign in with the account configured by your workspace administrator.</p>
-    <form onSubmit={submit} className="auth-form">
-      <label htmlFor="dashboard-email">Email</label>
-      <input id="dashboard-email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="email" required />
-      <label htmlFor="dashboard-password">Password</label>
-      <input id="dashboard-password" type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="current-password" required />
-      {error ? <div className="state state-error" role="alert">{error}</div> : null}
-      <button className="button primary" type="submit">Enter dashboard</button>
-    </form>
-  </main>;
+  if (isPublic(pathname)) return <>{children}</>;
+  if (state.status === "loading") {
+    return (
+      <main className="content">
+        <div className="state" role="status">Checking session and MFA...</div>
+      </main>
+    );
+  }
+  if (state.status === "error") {
+    return (
+      <main className="content">
+        <div className="state state-error" role="alert">{state.message}</div>
+      </main>
+    );
+  }
+  if (state.status === "ready") return <>{children}</>;
+  // Redirecting: render nothing so protected data never flashes.
+  return (
+    <main className="content">
+      <div className="state" role="status">Redirecting to login...</div>
+    </main>
+  );
 }

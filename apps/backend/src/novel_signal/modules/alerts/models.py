@@ -8,13 +8,14 @@ from sqlalchemy import JSON, DateTime, ForeignKey, Index, String, Text, UniqueCo
 from sqlalchemy.orm import Mapped, mapped_column
 
 from novel_signal.db import Base
+from novel_signal.tenant import WorkspaceOwnedMixin
 
 
 def new_id() -> str:
     return str(uuid.uuid4())
 
 
-class AlertRule(Base):
+class AlertRule(WorkspaceOwnedMixin, Base):
     __tablename__ = "alert_rules"
     __table_args__ = (UniqueConstraint("rule_key", "version", name="uq_alert_rule_version"),)
 
@@ -30,7 +31,7 @@ class AlertRule(Base):
     )
 
 
-class AlertEvent(Base):
+class AlertEvent(WorkspaceOwnedMixin, Base):
     __tablename__ = "alert_events"
     __table_args__ = (
         UniqueConstraint("fingerprint", name="uq_alert_event_fingerprint"),

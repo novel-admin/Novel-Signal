@@ -1,3 +1,11 @@
+"""Deprecated custom auth.
+
+Supabase Auth is the only production identity provider. This module is
+retained only for local fixture compatibility and CLI tooling. Do not use
+it for production authentication. No new passwords are created; the
+``users.password_hash`` column is nullable legacy data.
+"""
+
 from __future__ import annotations
 
 import hashlib
@@ -58,7 +66,9 @@ def password_hash(password: str) -> str:
     return f"pbkdf2_sha256$240000${salt_text}${derived_text}"
 
 
-def verify_password(password: str, encoded: str) -> bool:
+def verify_password(password: str, encoded: str | None) -> bool:
+    if not encoded:
+        return False
     try:
         algorithm, rounds, salt, expected = encoded.split("$")
         if algorithm != "pbkdf2_sha256":
@@ -72,7 +82,10 @@ def verify_password(password: str, encoded: str) -> bool:
 
 
 def authenticate(session: Session, email: str, password: str) -> User | None:
+    """Legacy only. Production authentication is Supabase-only."""
     user = session.scalar(
         select(User).where(User.email == email.strip().lower(), User.is_active.is_(True))
     )
-    return user if user and verify_password(password, user.password_hash) else None
+    if user is None or not user.password_hash:
+        return None
+    return user if verify_password(password, user.password_hash) else None
