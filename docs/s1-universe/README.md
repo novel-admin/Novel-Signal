@@ -74,6 +74,21 @@ curl -X POST http://127.0.0.1:8000/api/v1/universe/products \
    supported by the configuration evidence.
 6. Edit, archive, show archived and restore through `/universe` or the API.
 
+### Find competitors from a product
+
+On the Products tab, choose **Find competitors** to edit search phrases and queue Amazon.in SERP
+jobs for that product. Collection runs through the S12 worker; it is asynchronous and may report a
+challenge or other failure. Choose **Check results** after collection to build product-scoped
+candidate proposals. Each candidate links to its public Amazon listing and stays inactive until
+approved. Approval creates or reuses the tracked competitor listing and adds it to the product's
+battle card. Dismissed candidates are rejected and are not attached.
+
+The API equivalents are `POST /products/{id}/search-competitors`,
+`POST /products/{id}/competitor-proposals/build`, and
+`GET /competitor-proposals?product_id={id}&status=pending`. Search phrases are limited to eight
+per request. This workflow uses logged-out public Amazon search only; it does not require Amazon
+credentials.
+
 ## CSV workflow
 
 CSV endpoints are scoped by entity:

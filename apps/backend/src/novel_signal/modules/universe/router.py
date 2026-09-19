@@ -45,6 +45,8 @@ from novel_signal.modules.universe.schemas import (
     CompetitorProposalList,
     CompetitorProposalRead,
     CompetitorRead,
+    CompetitorSearchRequest,
+    CompetitorSearchResult,
     CompetitorUpdate,
     CsvImportRequest,
     CsvImportResult,
@@ -195,8 +197,11 @@ def list_competitor_proposals(
     status: ProposalStatus | None = None,
     limit: Limit = 50,
     offset: Offset = 0,
+    product_id: uuid.UUID | None = None,
 ) -> CompetitorProposalList:
-    items, total = service.list_proposals(status=status, limit=limit, offset=offset)
+    items, total = service.list_proposals(
+        status=status, limit=limit, offset=offset, product_id=product_id
+    )
     return CompetitorProposalList(
         items=[CompetitorProposalRead.model_validate(item) for item in items],
         total=total,
@@ -255,6 +260,26 @@ def generate_product_keywords(
     return ProductKeywordGenerationResult.model_validate(
         execute(lambda: service.generate_for_product(entity_id))
     )
+
+
+@router.post("/products/{entity_id}/search-competitors", response_model=CompetitorSearchResult)
+def search_competitors_for_product(
+    entity_id: uuid.UUID,
+    payload: CompetitorSearchRequest,
+    service: KeywordGenerationDependency,
+) -> CompetitorSearchResult:
+    return CompetitorSearchResult.model_validate(
+        execute(lambda: service.search_competitors(entity_id, payload.keywords))
+    )
+
+
+@router.post("/products/{entity_id}/competitor-proposals/build", response_model=ProposalBuildResult)
+def build_product_competitor_proposals(
+    entity_id: uuid.UUID,
+    service: ProposalServiceDependency,
+) -> ProposalBuildResult:
+    result = execute(lambda: service.build_from_new_entrants(entity_id))
+    return ProposalBuildResult(**result)
 
 
 def csv_response(content: str, filename: str) -> Response:

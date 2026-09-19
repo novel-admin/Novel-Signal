@@ -16,6 +16,7 @@ from typing import Any
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from novel_signal.modules.keywords.models import TrackingTarget
 from novel_signal.modules.rank_visibility.models import NewEntrantEvent
 from novel_signal.modules.universe.errors import (
     UniverseConflictError,
@@ -23,6 +24,7 @@ from novel_signal.modules.universe.errors import (
     UniverseValidationError,
 )
 from novel_signal.modules.universe.models import (
+    BattleCard,
     BattleCardItem,
     Competitor,
     CompetitorProduct,
@@ -34,8 +36,12 @@ from novel_signal.modules.universe.models import (
 from novel_signal.modules.universe.repository import UniverseRepository
 
 
-def proposal_fingerprint(marketplace: Marketplace, marketplace_product_id: str) -> str:
-    raw = f"{marketplace.value}:{marketplace_product_id.strip().upper()}"
+def proposal_fingerprint(
+    marketplace: Marketplace, marketplace_product_id: str,
+    discovered_for_product_id: uuid.UUID | None = None,
+) -> str:
+    scope = f":{discovered_for_product_id}" if discovered_for_product_id else ""
+    raw = f"{marketplace.value}:{marketplace_product_id.strip().upper()}{scope}"
     return hashlib.sha256(raw.encode()).hexdigest()
 
 
@@ -78,6 +84,7 @@ class ProposalService:
         status: ProposalStatus | None = None,
         limit: int = 50,
         offset: int = 0,
+        product_id: uuid.UUID | None = None,
     ) -> tuple[list[CompetitorProposal], int]:
         statement = select(CompetitorProposal).order_by(
             CompetitorProposal.score.desc().nulls_last(),
@@ -88,6 +95,10 @@ class ProposalService:
         if status is not None:
             statement = statement.where(CompetitorProposal.status == status)
             count_statement = count_statement.where(CompetitorProposal.status == status)
+        if product_id is not None:
+            product_filter = CompetitorProposal.discovered_for_product_id == product_id
+            statement = statement.where(product_filter)
+            count_statement = count_statement.where(product_filter)
         items = list(self.session.scalars(statement.limit(limit).offset(offset)))
         total = self.session.scalar(count_statement) or 0
         return items, total
@@ -98,16 +109,20 @@ class ProposalService:
             raise UniverseNotFoundError("competitor proposal not found")
         return proposal
 
-    def build_from_new_entrants(self) -> dict[str, int]:
+    def build_from_new_entrants(self, product_id: uuid.UUID | None = None) -> dict[str, int]:
         """Aggregate unmapped NewEntrantEvents into pending proposals (idempotent)."""
-        events = list(
-            self.session.scalars(
-                select(NewEntrantEvent).where(
+        statement = select(NewEntrantEvent).where(
                     NewEntrantEvent.product_id.is_(None),
                     NewEntrantEvent.competitor_product_id.is_(None),
                 )
+        if product_id is not None:
+            keyword_ids = select(TrackingTarget.keyword_id).where(
+                TrackingTarget.product_id == product_id,
+                TrackingTarget.archived_at.is_(None),
+                TrackingTarget.enabled.is_(True),
             )
-        )
+            statement = statement.where(NewEntrantEvent.keyword_id.in_(keyword_ids))
+        events = list(self.session.scalars(statement))
         grouped: dict[tuple[str, str], list[NewEntrantEvent]] = {}
         for event in events:
             marketplace_value = (
@@ -123,7 +138,7 @@ class ProposalService:
             marketplace = Marketplace(marketplace_value)
             if self.repository.active_competitor_product_identity_exists(marketplace, asin):
                 continue
-            fingerprint = proposal_fingerprint(marketplace, asin)
+            fingerprint = proposal_fingerprint(marketplace, asin, product_id)
             existing = self.session.scalar(
                 select(CompetitorProposal).where(CompetitorProposal.fingerprint == fingerprint)
             )
@@ -160,6 +175,7 @@ class ProposalService:
                         fingerprint=fingerprint,
                         marketplace=marketplace,
                         marketplace_product_id=asin,
+                        discovered_for_product_id=product_id,
                         brand=brand,
                         status=ProposalStatus.PENDING,
                         score=score,
@@ -213,42 +229,79 @@ class ProposalService:
                 raise UniverseConflictError(
                     "proposal is already linked to an active competitor product"
                 )
-        if self.repository.active_competitor_product_identity_exists(
-            proposal.marketplace, proposal.marketplace_product_id
-        ):
-            raise UniverseConflictError("this marketplace product is already tracked")
+        existing_product = self.session.scalar(
+            select(CompetitorProduct).where(
+                CompetitorProduct.marketplace == proposal.marketplace,
+                CompetitorProduct.marketplace_product_id == proposal.marketplace_product_id,
+                CompetitorProduct.archived_at.is_(None),
+            )
+        )
+        if existing_product is not None:
+            product = existing_product
+        else:
+            product = None
 
         competitor: Competitor | None = None
-        if competitor_id is not None:
-            competitor = self.repository.get_competitor(competitor_id)
-            if competitor is None or competitor.archived_at is not None:
-                raise UniverseValidationError("an active competitor is required")
+        if product is not None:
+            competitor = self.repository.get_competitor(product.competitor_id)
         else:
-            fallback = f"Unidentified {proposal.marketplace_product_id}"
-            name = (competitor_name or proposal.brand or fallback).strip()
-            competitor = self.repository.get_active_competitor_by_name(name)
-            if competitor is None:
-                competitor = Competitor(name=name)
-                self.session.add(competitor)
-                self.session.flush()
+            if competitor_id is not None:
+                competitor = self.repository.get_competitor(competitor_id)
+                if competitor is None or competitor.archived_at is not None:
+                    raise UniverseValidationError("an active competitor is required")
+            else:
+                fallback = f"Unidentified {proposal.marketplace_product_id}"
+                name = (competitor_name or proposal.brand or fallback).strip()
+                competitor = self.repository.get_active_competitor_by_name(name)
+                if competitor is None:
+                    competitor = Competitor(name=name)
+                    self.session.add(competitor)
+                    self.session.flush()
 
-        product = CompetitorProduct(
-            competitor_id=competitor.id,
-            name=proposal.title or proposal.marketplace_product_id,
-            brand=proposal.brand or competitor.name,
-            category=(category or "Unclassified").strip(),
-            marketplace=proposal.marketplace,
-            marketplace_product_id=proposal.marketplace_product_id,
-            product_url=f"https://www.amazon.in/dp/{proposal.marketplace_product_id}",
-            tracking_tier=tracking_tier,
-        )
-        self.session.add(product)
-        self.session.flush()
+        if product is None:
+            if competitor is None:
+                raise UniverseValidationError("an active competitor is required")
+            product = CompetitorProduct(
+                competitor_id=competitor.id,
+                name=proposal.title or proposal.marketplace_product_id,
+                brand=proposal.brand or competitor.name,
+                category=(category or "Unclassified").strip(),
+                marketplace=proposal.marketplace,
+                marketplace_product_id=proposal.marketplace_product_id,
+                product_url=f"https://www.amazon.in/dp/{proposal.marketplace_product_id}",
+                tracking_tier=tracking_tier,
+            )
+            self.session.add(product)
+            self.session.flush()
+
+        if battle_card_id is None and proposal.discovered_for_product_id is not None:
+            card = self.session.scalar(
+                select(BattleCard).where(
+                    BattleCard.product_id == proposal.discovered_for_product_id,
+                    BattleCard.archived_at.is_(None),
+                ).order_by(BattleCard.created_at)
+            )
+            if card is None:
+                card = BattleCard(
+                    product_id=proposal.discovered_for_product_id,
+                    name="Competitor comparison",
+                    comparison_notes="Competitors approved from public Amazon search results.",
+                )
+                self.session.add(card)
+                self.session.flush()
+            battle_card_id = card.id
 
         if battle_card_id is not None:
             battle_card = self.repository.get_battle_card(battle_card_id)
             if battle_card is None or battle_card.archived_at is not None:
                 raise UniverseValidationError("an active battle card is required")
+            if (
+                proposal.discovered_for_product_id is not None
+                and battle_card.product_id != proposal.discovered_for_product_id
+            ):
+                raise UniverseValidationError(
+                    "a product search candidate can only be added to that product's battle card"
+                )
             if not self.repository.active_battle_card_item_exists(battle_card.id, product.id):
                 self.session.add(
                     BattleCardItem(
