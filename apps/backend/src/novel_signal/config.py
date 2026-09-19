@@ -31,7 +31,7 @@ class Settings(BaseSettings):
     auth_allow_email_fallback_linking: bool = False
     source_encryption_key: SecretStr = SecretStr("")
     source_encryption_key_version: int = 1
-    cors_origins: str = "http://localhost:3000"
+    allowed_origins: str = "http://localhost:3000,http://localhost:5173"
     database_url: str = "postgresql+psycopg://novel_signal:novel_signal@localhost:5432/novel_signal"
     object_store_endpoint: str = "http://localhost:9000"
     object_store_bucket: str = "novel-signal-raw"
