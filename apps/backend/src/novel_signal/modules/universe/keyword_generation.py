@@ -164,6 +164,11 @@ class KeywordGenerationService:
         if product is None:
             raise UniverseNotFoundError("product not found")
         keyword_ids: set[uuid.UUID] = set()
+        competitors = list(
+            self.session.scalars(
+                select(Competitor.name).where(Competitor.archived_at.is_(None))
+            )
+        )
         cadence = CADENCE_BY_TIER.get(product.tracking_tier, 240)
         for text in phrases:
             normalized = normalize_keyword(text)
@@ -184,6 +189,7 @@ class KeywordGenerationService:
                     intent_cluster=classify_keyword_intent(
                         text,
                         owned_brands=[product.brand],
+                        competitor_brands=competitors,
                         categories=[product.category],
                     ),
                     sources=[

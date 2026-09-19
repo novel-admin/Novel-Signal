@@ -259,6 +259,8 @@ class ProposalService:
                     self.session.flush()
 
         if product is None:
+            if competitor is None:
+                raise UniverseValidationError("an active competitor is required")
             product = CompetitorProduct(
                 competitor_id=competitor.id,
                 name=proposal.title or proposal.marketplace_product_id,
