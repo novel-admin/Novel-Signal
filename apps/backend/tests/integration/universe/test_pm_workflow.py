@@ -180,7 +180,12 @@ def test_proposal_scoring_unit() -> None:
 
 def test_product_competitor_search_queues_amazon_only_jobs(client: TestClient) -> None:
     imported = client.post(
-        f"{BASE}/products-minimal/import", json={"csv_text": MINIMAL_CSV.splitlines()[0] + "\n" + MINIMAL_CSV.splitlines()[1]}
+        f"{BASE}/products-minimal/import",
+        json={
+            "csv_text": MINIMAL_CSV.splitlines()[0]
+            + "\n"
+            + MINIMAL_CSV.splitlines()[1]
+        },
     )
     assert imported.status_code == 200, imported.text
     products = client.get(f"{BASE}/products").json()["items"]

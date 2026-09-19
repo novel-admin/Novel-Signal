@@ -16,16 +16,16 @@ from typing import Any
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from novel_signal.modules.rank_visibility.models import NewEntrantEvent
 from novel_signal.modules.keywords.models import TrackingTarget
+from novel_signal.modules.rank_visibility.models import NewEntrantEvent
 from novel_signal.modules.universe.errors import (
     UniverseConflictError,
     UniverseNotFoundError,
     UniverseValidationError,
 )
 from novel_signal.modules.universe.models import (
-    BattleCardItem,
     BattleCard,
+    BattleCardItem,
     Competitor,
     CompetitorProduct,
     CompetitorProposal,
@@ -96,8 +96,9 @@ class ProposalService:
             statement = statement.where(CompetitorProposal.status == status)
             count_statement = count_statement.where(CompetitorProposal.status == status)
         if product_id is not None:
-            statement = statement.where(CompetitorProposal.discovered_for_product_id == product_id)
-            count_statement = count_statement.where(CompetitorProposal.discovered_for_product_id == product_id)
+            product_filter = CompetitorProposal.discovered_for_product_id == product_id
+            statement = statement.where(product_filter)
+            count_statement = count_statement.where(product_filter)
         items = list(self.session.scalars(statement.limit(limit).offset(offset)))
         total = self.session.scalar(count_statement) or 0
         return items, total

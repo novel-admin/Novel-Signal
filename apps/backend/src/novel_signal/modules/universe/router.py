@@ -44,9 +44,9 @@ from novel_signal.modules.universe.schemas import (
     CompetitorProductUpdate,
     CompetitorProposalList,
     CompetitorProposalRead,
+    CompetitorRead,
     CompetitorSearchRequest,
     CompetitorSearchResult,
-    CompetitorRead,
     CompetitorUpdate,
     CsvImportRequest,
     CsvImportResult,
@@ -199,7 +199,9 @@ def list_competitor_proposals(
     offset: Offset = 0,
     product_id: uuid.UUID | None = None,
 ) -> CompetitorProposalList:
-    items, total = service.list_proposals(status=status, limit=limit, offset=offset, product_id=product_id)
+    items, total = service.list_proposals(
+        status=status, limit=limit, offset=offset, product_id=product_id
+    )
     return CompetitorProposalList(
         items=[CompetitorProposalRead.model_validate(item) for item in items],
         total=total,
