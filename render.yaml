@@ -21,8 +21,8 @@ services:
           property: connectionString
       - key: INTERNAL_AUTH_SECRET
         generateValue: true
-      - key: CORS_ORIGINS
-        value: https://novel-signal-web.onrender.com
+      - key: ALLOWED_ORIGINS
+        value: https://novel-signal-web.vercel.app,https://novel-signal-web.onrender.com
       - key: FRONTEND_URL
         value: https://novel-signal-web.onrender.com
       - key: SUPABASE_URL

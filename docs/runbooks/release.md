@@ -17,7 +17,7 @@ Before release:
 - `preDeployCommand` runs `alembic -c apps/backend/alembic.ini upgrade head` as
   the release migration step before every deploy.
 - Required service env vars: `DATABASE_URL` (from database), `INTERNAL_AUTH_SECRET`
-  (generated), `CORS_ORIGINS`, `OBJECT_STORE_ENDPOINT/BUCKET/ACCESS_KEY/SECRET_KEY/REGION`,
+  (generated), `ALLOWED_ORIGINS`, `OBJECT_STORE_ENDPOINT/BUCKET/ACCESS_KEY/SECRET_KEY/REGION`,
   `COLLECTION_BATCH_SIZE`, `INTERNAL_SCHEDULER_ENABLED`,
   `INTERNAL_SCHEDULER_INTERVAL_SECONDS`, plus optional provider credentials
   (`AMAZON_*`, `GOOGLE_*`, `META_*`). Missing API credentials leave dependent
