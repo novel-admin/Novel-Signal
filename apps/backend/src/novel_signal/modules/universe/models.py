@@ -303,6 +303,7 @@ class CompetitorProposal(TimestampedArchiveMixin, WorkspaceOwnedMixin, Base):
             "uq_competitor_proposals_active_identity",
             "marketplace",
             "marketplace_product_id",
+            "discovered_for_product_id",
             unique=True,
             postgresql_where=text("status = 'pending'"),
             sqlite_where=text("status = 'pending'"),
@@ -315,6 +316,9 @@ class CompetitorProposal(TimestampedArchiveMixin, WorkspaceOwnedMixin, Base):
         enum_column(Marketplace, "proposal_marketplace"), nullable=False
     )
     marketplace_product_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    discovered_for_product_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("products.id", ondelete="SET NULL")
+    )
     brand: Mapped[str | None] = mapped_column(String(255))
     title: Mapped[str | None] = mapped_column(String(500))
     status: Mapped[ProposalStatus] = mapped_column(

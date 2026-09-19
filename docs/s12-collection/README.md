@@ -31,6 +31,8 @@ Implemented:
 - executor registry for Phase-3 collector/evidence pipeline integration
 - Database-backed collection planning, claiming, retry scheduling, and Render Cron execution
 - collection job list/get/plan/manual-dispatch API endpoints
+- product-initiated Amazon-only SERP planning for competitor discovery, using the same tracking
+  targets, idempotent jobs, worker execution and challenge handling as scheduled collection
 
 ## Week-1 scheduling contract
 

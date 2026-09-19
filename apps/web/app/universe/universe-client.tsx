@@ -90,6 +90,7 @@ export default function UniverseClient() {
   const [csvResult, setCsvResult] = useState<CsvValidationResult | null>(null);
   const [csvBusy, setCsvBusy] = useState(false);
   const [csvMessage, setCsvMessage] = useState<string | null>(null);
+  const [searchProduct, setSearchProduct] = useState<Product | null>(null);
 
   const reload = useCallback(async () => {
     setLoading(true);
@@ -303,6 +304,7 @@ export default function UniverseClient() {
           tab={activeTab}
           onEdit={openEdit}
           onStateChange={mutateState}
+          onFindCompetitors={(product) => setSearchProduct(product)}
         />
       )}
 
@@ -324,6 +326,7 @@ export default function UniverseClient() {
           onSave={save}
         />
       ) : null}
+      {searchProduct ? <CompetitorSearchPanel product={searchProduct} onClose={() => setSearchProduct(null)} /> : null}
     </section>
   );
 }
@@ -333,6 +336,73 @@ export function paginationRange(page: { total: number; limit: number; offset: nu
     start: page.total === 0 ? 0 : page.offset + 1,
     end: Math.min(page.offset + page.limit, page.total),
   };
+}
+
+type CompetitorProposal = {
+  id: string; marketplace_product_id: string; title: string | null; brand: string | null;
+  status: string; score: number | null; appearances: number; best_rank: number | null;
+  evidence: { keyword_ids?: string[] } | null;
+};
+
+function CompetitorSearchPanel({ product, onClose }: { product: Product; onClose: () => void }) {
+  const [phrases, setPhrases] = useState(`${product.category}\n${product.brand} ${product.category}\n${product.name}`);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState("");
+  const [proposals, setProposals] = useState<CompetitorProposal[]>([]);
+
+  async function loadProposals() {
+    setBusy(true);
+    setMessage("");
+    try {
+      await apiRequest(`/universe/products/${product.id}/competitor-proposals/build`, { method: "POST" });
+      const result = await apiRequest<{ items: CompetitorProposal[] }>(`/universe/competitor-proposals?status=pending&product_id=${product.id}&limit=100`);
+      setProposals(result.items);
+      setMessage(result.items.length ? `${result.items.length} candidate listings ready for review.` : "No candidates yet. Amazon searches may still be queued, or their results may contain no new listings. Check again after collection finishes.");
+    } catch (requestError) {
+      setMessage(requestError instanceof Error ? requestError.message : "Unable to load search results");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function startSearch() {
+    const selected = [...new Set(phrases.split(/\r?\n/).map((value) => value.trim()).filter(Boolean))];
+    setBusy(true);
+    setMessage("");
+    try {
+      const result = await apiRequest<{ job_ids: string[]; created_jobs: number; existing_jobs: number }>(`/universe/products/${product.id}/search-competitors`, { method: "POST", body: JSON.stringify({ keywords: selected }) });
+      setMessage(`${result.created_jobs} Amazon searches queued${result.existing_jobs ? `; ${result.existing_jobs} already queued` : ""}. Results appear after collection runs.`);
+    } catch (requestError) {
+      setMessage(requestError instanceof Error ? requestError.message : "Unable to start search");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function decide(candidate: CompetitorProposal, action: "approve" | "reject") {
+    setBusy(true);
+    try {
+      await apiRequest(`/universe/competitor-proposals/${candidate.id}/${action}`, { method: "POST", ...(action === "approve" ? { body: JSON.stringify({}) } : {}) });
+      setProposals((current) => current.filter((item) => item.id !== candidate.id));
+      setMessage(action === "approve" ? "Competitor approved and added to this product’s comparison card." : "Candidate dismissed.");
+    } catch (requestError) {
+      setMessage(requestError instanceof Error ? requestError.message : "Unable to update candidate");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return <div className="dialog-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+    <section aria-labelledby="competitor-search-title" aria-modal="true" className="dialog competitor-search-dialog" role="dialog">
+      <header className="dialog-header"><div><p className="eyebrow">Public Amazon.in search</p><h2 id="competitor-search-title">Find competitors for {product.name}</h2></div><button aria-label="Close" className="icon-button" onClick={onClose} type="button">×</button></header>
+      <p>Choose search phrases. Novel Signal searches public listings; nothing is linked until you approve it.</p>
+      <label className="field"><span>Search phrases, one per line</span><textarea value={phrases} onChange={(event) => setPhrases(event.target.value)} rows={4} /></label>
+      <div className="dialog-actions"><button className="button primary" disabled={busy || !phrases.trim()} onClick={() => void startSearch()} type="button">{busy ? "Working…" : "Search Amazon"}</button><button className="button" disabled={busy} onClick={() => void loadProposals()} type="button">Check results</button></div>
+      {message ? <p aria-live="polite" className="csv-message">{message}</p> : null}
+      {proposals.length ? <div className="proposal-list">{proposals.map((candidate) => <article className="proposal-card" key={candidate.id}><div><strong>{candidate.title ?? candidate.marketplace_product_id}</strong><span>{candidate.brand ?? "Brand unknown"} · ASIN {candidate.marketplace_product_id} · {candidate.appearances} appearance{candidate.appearances === 1 ? "" : "s"}{candidate.best_rank ? ` · best rank ${candidate.best_rank}` : ""}</span></div><a href={`https://www.amazon.in/dp/${candidate.marketplace_product_id}`} rel="noreferrer" target="_blank">View listing</a><div className="dialog-actions"><button className="button primary" disabled={busy} onClick={() => void decide(candidate, "approve")} type="button">Approve</button><button className="button" disabled={busy} onClick={() => void decide(candidate, "reject")} type="button">Dismiss</button></div></article>)}</div> : null}
+      <footer className="dialog-actions"><button className="button" onClick={onClose} type="button">Done</button></footer>
+    </section>
+  </div>;
 }
 
 function Pagination({ page, onPrevious, onNext }: { page: { total: number; limit: number; offset: number }; onPrevious: () => void; onNext: () => void }) {
@@ -435,12 +505,14 @@ function UniverseTable({
   data,
   onEdit,
   onStateChange,
+  onFindCompetitors,
 }: {
   tab: Tab;
   records: Entity[];
   data: UniverseData;
   onEdit: (entity: Entity) => void;
   onStateChange: (entity: Entity, archive: boolean) => void;
+  onFindCompetitors: (product: Product) => void;
 }) {
   return (
     <div className="table-wrap">
@@ -455,6 +527,7 @@ function UniverseTable({
               tab={tab}
               onEdit={onEdit}
               onStateChange={onStateChange}
+              onFindCompetitors={onFindCompetitors}
             />
           ))}
         </tbody>
@@ -479,12 +552,14 @@ function TableRow({
   data,
   onEdit,
   onStateChange,
+  onFindCompetitors,
 }: {
   tab: Tab;
   record: Entity;
   data: UniverseData;
   onEdit: (entity: Entity) => void;
   onStateChange: (entity: Entity, archive: boolean) => void;
+  onFindCompetitors: (product: Product) => void;
 }) {
   const archived = Boolean(record.archived_at);
   let cells: React.ReactNode[];
@@ -532,6 +607,7 @@ function TableRow({
     <tr className={archived ? "archived-row" : ""}>
       {cells.map((cell, index) => <td key={index}>{cell}</td>)}
       <td><div className="row-actions">
+        {tab === "products" && !archived ? <button className="text-button" onClick={() => onFindCompetitors(record as Product)} type="button">Find competitors</button> : null}
         <button className="text-button" onClick={() => onEdit(record)} type="button">Edit</button>
         {archived ? <button className="text-button" onClick={() => onStateChange(record, false)} type="button">Restore</button> : <ConfirmDialog label="Archive" confirmLabel="Confirm Archive" title={`Archive ${singularLabel(tab)}?`} message="This record will be hidden from active workflows. You can restore it later." onConfirm={() => onStateChange(record, true)} />}
       </div></td>

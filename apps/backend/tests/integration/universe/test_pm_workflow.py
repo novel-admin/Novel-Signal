@@ -11,8 +11,8 @@ from fastapi.testclient import TestClient
 from novel_signal.db import Base, get_db
 from novel_signal.main import app
 from novel_signal.modules.rank_visibility.models import NewEntrantEvent
-from novel_signal.modules.universe.models import Marketplace
-from novel_signal.modules.universe.proposals import score_candidate
+from novel_signal.modules.universe.models import CompetitorProposal, Marketplace
+from novel_signal.modules.universe.proposals import proposal_fingerprint, score_candidate
 from sqlalchemy import create_engine, event, select
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
@@ -176,6 +176,69 @@ def test_proposal_scoring_unit() -> None:
     assert set(breakdown) == {"recurrence", "rank_strength", "category_match", "sku_overlap"}
     weak, _ = score_candidate(appearances=1, best_rank=None)
     assert weak < score
+
+
+def test_product_competitor_search_queues_amazon_only_jobs(client: TestClient) -> None:
+    imported = client.post(
+        f"{BASE}/products-minimal/import", json={"csv_text": MINIMAL_CSV.splitlines()[0] + "\n" + MINIMAL_CSV.splitlines()[1]}
+    )
+    assert imported.status_code == 200, imported.text
+    products = client.get(f"{BASE}/products").json()["items"]
+    product = next(item for item in products if item["internal_sku"] == "NOV-WIPES-001")
+
+    queued = client.post(
+        f"{BASE}/products/{product['id']}/search-competitors",
+        json={"keywords": ["baby wipes", "NOVEL baby wipes"]},
+    )
+    assert queued.status_code == 200, queued.text
+    body = queued.json()
+    assert len(body["job_ids"]) == 2
+    jobs = client.get("/api/v1/collection/jobs?limit=20").json()["items"]
+    matching = [job for job in jobs if job["id"] in body["job_ids"]]
+    assert len(matching) == 2
+    assert {job["platform"] for job in matching} == {"amazon_in"}
+    assert {job["job_type"] for job in matching} == {"serp"}
+
+
+def test_approving_product_candidate_adds_it_to_that_products_card(client: TestClient) -> None:
+    created = client.post(
+        f"{BASE}/products",
+        json={
+            "internal_sku": "NOV-CREAM-001", "name": "Novel Baby Cream", "brand": "NOVEL",
+            "category": "Baby Cream", "marketplace": "amazon_in", "tracking_tier": "T1",
+        },
+    )
+    assert created.status_code == 201, created.text
+    product_id = uuid.UUID(created.json()["id"])
+    proposal_id = uuid.uuid4()
+    override = app.dependency_overrides[get_db]
+    sessions = override()  # type: ignore[operator]
+    session = next(sessions)
+    try:
+        session.add(CompetitorProposal(
+            id=proposal_id,
+            fingerprint=proposal_fingerprint(Marketplace.AMAZON_IN, "B0CANDIDATE1", product_id),
+            marketplace=Marketplace.AMAZON_IN,
+            marketplace_product_id="B0CANDIDATE1",
+            discovered_for_product_id=product_id,
+            brand="Example Brand",
+            title="Example Baby Cream",
+            appearances=2,
+        ))
+        session.commit()
+    finally:
+        try:
+            next(sessions)
+        except StopIteration:
+            pass
+        session.close()
+
+    approved = client.post(f"{BASE}/competitor-proposals/{proposal_id}/approve", json={})
+    assert approved.status_code == 200, approved.text
+    cards = client.get(f"{BASE}/battle-cards?product_id={product_id}").json()["items"]
+    assert len(cards) == 1
+    assert cards[0]["product_id"] == str(product_id)
+    assert cards[0]["items"][0]["competitor_product"]["marketplace_product_id"] == "B0CANDIDATE1"
 
 
 def test_proposal_build_approve_reject_flow(client: TestClient) -> None:

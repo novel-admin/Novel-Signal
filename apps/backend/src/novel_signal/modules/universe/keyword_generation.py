@@ -23,6 +23,7 @@ from novel_signal.modules.keywords.models import (
 from novel_signal.modules.keywords.schemas import normalize_keyword
 from novel_signal.modules.universe.errors import UniverseNotFoundError
 from novel_signal.modules.universe.models import Competitor, Product, TrackingTier
+from novel_signal.modules.collection.service import CollectionPlanningService
 
 CADENCE_BY_TIER: dict[TrackingTier, int] = {
     TrackingTier.T1: 60,
@@ -156,3 +157,42 @@ class KeywordGenerationService:
             "reused_keywords": reused,
             "tracking_targets_created": targets_created,
         }
+
+    def search_competitors(self, product_id: uuid.UUID, phrases: list[str]) -> dict[str, object]:
+        """Create product targets and queue public Amazon SERP jobs for selected phrases."""
+        product = self.session.get(Product, product_id)
+        if product is None:
+            raise UniverseNotFoundError("product not found")
+        keyword_ids: set[uuid.UUID] = set()
+        cadence = CADENCE_BY_TIER.get(product.tracking_tier, 240)
+        for text in phrases:
+            normalized = normalize_keyword(text)
+            keyword = self.session.scalar(select(Keyword).where(
+                Keyword.marketplace == product.marketplace,
+                Keyword.normalized_text == normalized,
+                Keyword.archived_at.is_(None),
+            ))
+            if keyword is None:
+                keyword = Keyword(
+                    keyword_text=text,
+                    normalized_text=normalized,
+                    marketplace=product.marketplace,
+                    category=product.category,
+                    tier=product.tracking_tier,
+                    intent_cluster=classify_keyword_intent(text, owned_brands=[product.brand], categories=[product.category]),
+                    sources=[KeywordSource(source_type=KeywordSourceType.MANUAL, source_reference=f"competitor-search:{product.internal_sku}")],
+                )
+                self.session.add(keyword)
+                self.session.flush()
+            keyword_ids.add(keyword.id)
+            target = self.session.scalar(select(TrackingTarget).where(
+                TrackingTarget.keyword_id == keyword.id,
+                TrackingTarget.product_id == product.id,
+                TrackingTarget.archived_at.is_(None),
+            ))
+            if target is None:
+                self.session.add(TrackingTarget(keyword_id=keyword.id, product_id=product.id, cadence_minutes=cadence, enabled=True))
+        self.session.flush()
+        plan = CollectionPlanningService(self.session).plan_due(platforms={"amazon_in"}, entity_ids=keyword_ids)
+        self.session.commit()
+        return {"product_id": product.id, "keywords": phrases, "job_ids": [job.id for job in plan.jobs], "created_jobs": plan.created, "existing_jobs": plan.existing}

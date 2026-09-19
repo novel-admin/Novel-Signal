@@ -559,6 +559,7 @@ class CompetitorProposalRead(ReadModel):
     fingerprint: str
     marketplace: Marketplace
     marketplace_product_id: str
+    discovered_for_product_id: uuid.UUID | None = None
     brand: str | None
     title: str | None
     status: ProposalStatus
@@ -607,3 +608,23 @@ class ProductKeywordGenerationResult(ReadModel):
     created_keywords: list[GeneratedKeywordSummary]
     reused_keywords: list[GeneratedKeywordSummary]
     tracking_targets_created: int
+
+
+class CompetitorSearchRequest(BaseModel):
+    keywords: list[str] = Field(min_length=1, max_length=8)
+
+    @field_validator("keywords")
+    @classmethod
+    def clean_keywords(cls, values: list[str]) -> list[str]:
+        cleaned = list(dict.fromkeys(" ".join(value.split()) for value in values if value.strip()))
+        if not cleaned or any(len(value) > 200 for value in cleaned):
+            raise ValueError("Provide 1 to 8 search phrases, each up to 200 characters")
+        return cleaned
+
+
+class CompetitorSearchResult(ReadModel):
+    product_id: uuid.UUID
+    keywords: list[str]
+    job_ids: list[uuid.UUID]
+    created_jobs: int
+    existing_jobs: int
