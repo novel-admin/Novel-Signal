@@ -222,9 +222,9 @@ def test_approving_product_candidate_adds_it_to_that_products_card(client: TestC
     try:
         session.add(CompetitorProposal(
             id=proposal_id,
-            fingerprint=proposal_fingerprint(Marketplace.AMAZON_IN, "B0CANDIDATE1", product_id),
+            fingerprint=proposal_fingerprint(Marketplace.AMAZON_IN, "B0CANDID01", product_id),
             marketplace=Marketplace.AMAZON_IN,
-            marketplace_product_id="B0CANDIDATE1",
+            marketplace_product_id="B0CANDID01",
             discovered_for_product_id=product_id,
             brand="Example Brand",
             title="Example Baby Cream",
@@ -243,7 +243,7 @@ def test_approving_product_candidate_adds_it_to_that_products_card(client: TestC
     cards = client.get(f"{BASE}/battle-cards?product_id={product_id}").json()["items"]
     assert len(cards) == 1
     assert cards[0]["product_id"] == str(product_id)
-    assert cards[0]["items"][0]["competitor_product"]["marketplace_product_id"] == "B0CANDIDATE1"
+    assert cards[0]["items"][0]["competitor_product"]["marketplace_product_id"] == "B0CANDID01"
 
 
 def test_proposal_build_approve_reject_flow(client: TestClient) -> None:
