@@ -11,11 +11,11 @@ class HealthResponse(BaseModel):
     service: str = "novel-signal-api"
 
 
-@router.get("/live", response_model=HealthResponse)
+@router.api_route("/live", methods=["GET", "HEAD"], response_model=HealthResponse)
 def live() -> HealthResponse:
     return HealthResponse()
 
 
-@router.get("/ready", response_model=HealthResponse)
+@router.api_route("/ready", methods=["GET", "HEAD"], response_model=HealthResponse)
 def ready() -> HealthResponse:
     return HealthResponse()

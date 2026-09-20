@@ -32,8 +32,17 @@ export type RequestOptions = Omit<RequestInit, "body"> & {
   token?: string;
 };
 
+type AccessTokenProvider = () => Promise<string | null>;
+let accessTokenProvider: AccessTokenProvider | undefined;
+
+/** Register the browser session token source once at the application boundary. */
+export function setAccessTokenProvider(provider: AccessTokenProvider): void {
+  accessTokenProvider = provider;
+}
+
 export async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
-  const { body, token, headers, ...init } = options;
+  const { body, token: suppliedToken, headers, ...init } = options;
+  const token = suppliedToken ?? (await accessTokenProvider?.());
   const response = await fetch(`${apiBaseUrl}${path}`, {
     ...init,
     credentials: "include",

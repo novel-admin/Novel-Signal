@@ -20,11 +20,19 @@ def _is_postgres(url: str) -> bool:
     return url.startswith("postgresql") or url.startswith("postgres")
 
 
-pytestmark = pytest.mark.skipif(not _is_postgres(DATABASE_URL), reason="PostgreSQL only.")
+RUN_POSTGRES_RLS_TESTS = os.environ.get("RUN_POSTGRES_RLS_TESTS") == "1"
+POSTGRES_RLS_SKIP_REASON = (
+    "Set RUN_POSTGRES_RLS_TESTS=1 and provide a reachable test PostgreSQL database."
+)
+postgres_rls_only = pytest.mark.skipif(
+    not _is_postgres(DATABASE_URL) or not RUN_POSTGRES_RLS_TESTS,
+    reason=POSTGRES_RLS_SKIP_REASON,
+)
 
 
+@postgres_rls_only
 def test_rls_policies_exist_on_workspace_tables() -> None:
-    engine = create_engine(get_settings().database_url)
+    engine = create_engine(DATABASE_URL)
     try:
         with engine.connect() as connection:
             rows = connection.execute(
@@ -103,10 +111,11 @@ ALL_TENANT_TABLES = [
 ]
 
 
+@postgres_rls_only
 def test_rls_covers_every_tenant_table_strictly() -> None:
     """Direct PostgreSQL check for every table: RLS enabled, strict policy,
     no NULL bypass, workspace_id column and index present."""
-    engine = create_engine(get_settings().database_url)
+    engine = create_engine(DATABASE_URL)
     try:
         with engine.connect() as connection:
             for table in ALL_TENANT_TABLES:
@@ -155,6 +164,7 @@ def test_rls_covers_every_tenant_table_strictly() -> None:
         engine.dispose()
 
 
+@postgres_rls_only
 def test_cross_workspace_direct_access_blocked_by_rls() -> None:
     """Row blocking applies to the app database role (non-superuser).
 
@@ -163,7 +173,7 @@ def test_cross_workspace_direct_access_blocked_by_rls() -> None:
     isolation; row-level blocking is verified in production with the app role.
     Set TEST_APP_DATABASE_URL to a non-superuser app-role URL to exercise rows.
     """
-    engine = create_engine(get_settings().database_url)
+    engine = create_engine(DATABASE_URL)
     try:
         with engine.connect() as connection:
             user_row = connection.execute(

@@ -2,8 +2,13 @@
 
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
-import { ApiError, request } from "@novel-signal/api-client";
+import { ApiError, request, setAccessTokenProvider } from "@novel-signal/api-client";
 import { createClient } from "@/lib/supabase/client";
+
+setAccessTokenProvider(async () => {
+  const { data: { session } } = await createClient().auth.getSession();
+  return session?.access_token ?? null;
+});
 
 const PUBLIC_PREFIXES = ["/login", "/verify-email", "/first-login", "/forgot-password", "/reset-password", "/auth"];
 
