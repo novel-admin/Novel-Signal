@@ -9,28 +9,17 @@ import type {
   Retention,
 } from "./types";
 
-const base = process.env.NEXT_PUBLIC_API_URL ?? "/api/v1";
+import { request as authenticatedRequest } from "@novel-signal/api-client";
 
 export async function request<T>(
   path: string,
   init?: RequestInit,
 ): Promise<T> {
-  const response = await fetch(`${base}${path}`, {
+  return authenticatedRequest<T>(path, {
     ...init,
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      ...init?.headers,
-    },
+    body: init?.body,
+    headers: init?.headers,
   });
-
-  const body = await response.json().catch(() => null);
-
-  if (!response.ok) {
-    throw new Error(`Request failed (${response.status})`);
-  }
-
-  return body as T;
 }
 
 export async function loadCollection() {

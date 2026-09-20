@@ -9,38 +9,14 @@ import type {
   UniverseData,
 } from "./types";
 
-import { apiBaseUrl } from "@novel-signal/api-client";
-
-function errorMessage(body: unknown, status: number): string {
-  if (typeof body === "object" && body !== null && "detail" in body) {
-    const detail = body.detail;
-    if (typeof detail === "string") return detail;
-    if (typeof detail === "object" && detail !== null && "message" in detail) {
-      return String(detail.message);
-    }
-    if (Array.isArray(detail)) {
-      return detail
-        .map((entry) => {
-          if (typeof entry === "object" && entry !== null && "msg" in entry) {
-            return String(entry.msg);
-          }
-          return String(entry);
-        })
-        .join(" · ");
-    }
-  }
-  return `Request failed (${status})`;
-}
+import { apiBaseUrl, request } from "@novel-signal/api-client";
 
 export async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${apiBaseUrl}${path}`, {
+  return request<T>(path, {
     ...init,
-    credentials: "include",
-    headers: { "Content-Type": "application/json", ...init?.headers },
+    body: init?.body,
+    headers: init?.headers,
   });
-  const body: unknown = await response.json().catch(() => null);
-  if (!response.ok) throw new Error(errorMessage(body, response.status));
-  return body as T;
 }
 
 type UniverseTab = "competitors" | "products" | "competitor-products" | "battle-cards";

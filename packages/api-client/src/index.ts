@@ -69,6 +69,35 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
   return (await response.json()) as T;
 }
 
+export async function downloadFile(path: string, filename: string): Promise<void> {
+  const token = await accessTokenProvider?.();
+  const url = path.startsWith("http://") || path.startsWith("https://")
+    ? path
+    : `${apiBaseUrl}${path}`;
+  const response = await fetch(url, {
+    credentials: "include",
+    headers: {
+      Accept: "text/csv",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+  });
+  if (!response.ok) {
+    let error: ApiErrorBody = {};
+    try {
+      error = (await response.json()) as ApiErrorBody;
+    } catch {
+      // Preserve the HTTP status when the server returned no JSON body.
+    }
+    throw new ApiError(response.status, error);
+  }
+  const objectUrl = URL.createObjectURL(await response.blob());
+  const link = document.createElement("a");
+  link.href = objectUrl;
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(objectUrl);
+}
+
 export function withCursor(path: string, cursor?: string | null): string {
   if (!cursor) return path;
   const separator = path.includes("?") ? "&" : "?";

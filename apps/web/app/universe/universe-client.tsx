@@ -3,6 +3,7 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 
 import { ConfirmDialog } from "../../components/ConfirmDialog";
+import { downloadFile } from "@novel-signal/api-client";
 import { apiRequest, csvUrl, importCsv, loadUniverse, validateCsv } from "./api";
 import type {
   BattleCard,
@@ -271,9 +272,9 @@ export default function UniverseClient() {
       <div className="csv-toolbar" aria-label="CSV tools">
         <div><strong>CSV tools</strong><span>Validate before importing {activeTab.replaceAll("-", " ")}.</span></div>
         <div className="csv-actions">
-          <a className="button" download href={csvUrl(activeTab, "template")}>Download template</a>
+          <button className="button" type="button" onClick={() => void downloadFile(csvUrl(activeTab, "template"), `${activeTab}-template.csv`).catch((cause: Error) => setCsvMessage(cause.message))}>Download template</button>
           <label className="button file-button">Choose CSV<input accept=".csv,text/csv" onChange={(event) => void chooseCsv(event.target.files?.[0])} type="file" /></label>
-          <a className="button" download href={csvUrl(activeTab, "export", includeArchived)}>Export CSV</a>
+          <button className="button" type="button" onClick={() => void downloadFile(csvUrl(activeTab, "export", includeArchived), `${activeTab}.csv`).catch((cause: Error) => setCsvMessage(cause.message))}>Export CSV</button>
         </div>
       </div>
 
