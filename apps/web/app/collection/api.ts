@@ -17,7 +17,7 @@ export async function request<T>(
 ): Promise<T> {
   return authenticatedRequest<T>(path, {
     ...init,
-    body: init?.body,
+    body: typeof init?.body === "string" ? JSON.parse(init.body) : init?.body,
     headers: init?.headers,
   });
 }

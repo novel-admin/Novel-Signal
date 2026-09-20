@@ -14,7 +14,7 @@ import { apiBaseUrl, request } from "@novel-signal/api-client";
 export async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
   return request<T>(path, {
     ...init,
-    body: init?.body,
+    body: typeof init?.body === "string" ? JSON.parse(init.body) : init?.body,
     headers: init?.headers,
   });
 }
