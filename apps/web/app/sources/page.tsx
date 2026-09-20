@@ -1,14 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { apiBaseUrl } from "@novel-signal/api-client";
+import { request } from "@novel-signal/api-client";
 import { WorkEmpty, WorkError, WorkLoading } from "../../components/WorkStates";
 
 type Source = { source_type: string; owner: string; purpose: string; configured: boolean };
 type Item = { status: string; detail: string | null };
 type Readiness = { status: string; postgres: Item; object_store: Item; scheduler: Item };
-
-const api = apiBaseUrl;
 
 function sourceLabel(value: string) { return value.replaceAll("_", " "); }
 
@@ -19,13 +17,12 @@ export default function SourcesPage() {
   const load = useCallback(async () => {
     setError("");
     try {
-      const [sourceResponse, readinessResponse] = await Promise.all([
-        fetch(`${api}/sources`, { cache: "no-store", credentials: "include" }),
-        fetch(`${api}/collection/readiness`, { cache: "no-store", credentials: "include" }),
+      const [sourceData, readinessData] = await Promise.all([
+        request<Source[]>("/sources", { cache: "no-store" }),
+        request<Readiness>("/collection/readiness", { cache: "no-store" }),
       ]);
-      if (!sourceResponse.ok || !readinessResponse.ok) throw new Error("Unable to load source readiness");
-      setSources(await sourceResponse.json() as Source[]);
-      setReadiness(await readinessResponse.json() as Readiness);
+      setSources(sourceData);
+      setReadiness(readinessData);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Unable to load source readiness");
     }

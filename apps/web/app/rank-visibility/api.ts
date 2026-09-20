@@ -1,24 +1,8 @@
 import type { AmazonShareOfVoice, BadgeEvent, BrandPresence, Capture, CaptureDetail, GoogleDomainComparison, KeywordCoverageSummary, KeywordGapAnalysis, KeywordOption, ListResponse, NewEntrant, RankHistory, ReverseAsinIntelligence, Visibility } from "./types";
-import { apiBaseUrl } from "@novel-signal/api-client";
+import { request as authenticatedRequest } from "@novel-signal/api-client";
 
-// Keep browser traffic same-origin. Next.js proxies /api locally and deployments can route the
-// same path without exposing a backend host in the client bundle.
-const base = apiBaseUrl;
-
-function errorMessage(body: unknown, status: number) {
-  if (body && typeof body === "object" && "detail" in body) {
-    const detail = (body as { detail: unknown }).detail;
-    if (detail && typeof detail === "object" && "message" in detail) return String((detail as { message: unknown }).message);
-    if (Array.isArray(detail)) return detail.map((item) => typeof item === "object" && item && "msg" in item ? String(item.msg) : String(item)).join(" · ");
-  }
-  return `Request failed (${status})`;
-}
-
-export async function request<T>(path: string): Promise<T> {
-  const response = await fetch(`${base}${path}`, { cache: "no-store", credentials: "include" });
-  const body: unknown = await response.json().catch(() => null);
-  if (!response.ok) throw new Error(errorMessage(body, response.status));
-  return body as T;
+export function request<T>(path: string): Promise<T> {
+  return authenticatedRequest<T>(path, { cache: "no-store" });
 }
 
 export const loadDashboard = async () => {

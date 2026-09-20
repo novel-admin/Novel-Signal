@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useState } from "react";
-import { apiBaseUrl } from "@novel-signal/api-client";
+import { request } from "@novel-signal/api-client";
 
 type Connection = {
   provider: string;
@@ -13,8 +13,6 @@ type Connection = {
 };
 
 const providers = ["amazon_sp", "amazon_ads", "google_ads", "meta_ads", "amazon_public"];
-const api = apiBaseUrl;
-
 export default function IntegrationsPage() {
   const [connections, setConnections] = useState<Connection[]>([]);
   const [provider, setProvider] = useState(providers[0]);
@@ -24,9 +22,7 @@ export default function IntegrationsPage() {
   const [error, setError] = useState("");
 
   const load = useCallback(async () => {
-    const response = await fetch(`${api}/sources/connections`, { credentials: "include" });
-    if (!response.ok) throw new Error("Unable to load integrations");
-    setConnections((await response.json()) as Connection[]);
+    setConnections(await request<Connection[]>("/sources/connections"));
   }, []);
 
   useEffect(() => { void load().catch((cause) => setError(cause instanceof Error ? cause.message : "Unable to load integrations")); }, [load]);
@@ -37,13 +33,10 @@ export default function IntegrationsPage() {
     setMessage("");
     try {
       const parsed = JSON.parse(credentials) as Record<string, string>;
-      const response = await fetch(`${api}/sources/connections/${provider}`, {
+      await request(`/sources/connections/${provider}`, {
         method: "PUT",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ account_identifiers: account ? { account } : {}, credentials: parsed }),
+        body: { account_identifiers: account ? { account } : {}, credentials: parsed },
       });
-      if (!response.ok) throw new Error("Unable to save integration");
       setCredentials("");
       setMessage(`${provider} configuration saved. Verification is still required.`);
       await load();
@@ -54,8 +47,12 @@ export default function IntegrationsPage() {
 
   async function disconnect(name: string) {
     setError("");
-    const response = await fetch(`${api}/sources/connections/${name}`, { method: "DELETE", credentials: "include" });
-    if (!response.ok) { setError("Unable to disconnect integration"); return; }
+    try {
+      await request(`/sources/connections/${name}`, { method: "DELETE" });
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Unable to disconnect integration");
+      return;
+    }
     setMessage(`${name} disconnected.`);
     await load();
   }
